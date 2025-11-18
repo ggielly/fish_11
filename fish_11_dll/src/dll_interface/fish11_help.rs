@@ -5,7 +5,7 @@ use crate::platform_types::BOOL;
 use crate::platform_types::HWND;
 
 use crate::dll_function_identifier;
-use crate::dll_interface::{CRATE_VERSION, CURRENT_YEAR};
+use crate::dll_interface::CRATE_VERSION;
 use crate::unified_error::DllError;
 
 /// Displays help information about the DLL, including version and available commands.
@@ -14,7 +14,7 @@ use crate::unified_error::DllError;
 dll_function_identifier!(FiSH11_Help, _data, {
     let help_lines = [
         format!("=== FiSH_11 v{} - secure chat for mIRC ===", CRATE_VERSION),
-        format!("Written by [GuY], {} - licensed under the GPL v3.", CURRENT_YEAR),
+        format!("Written by [GuY] - licensed under the GPL-v3."),
         "".to_string(), // Empty line
         "Commands:".to_string(),
         "  FiSH11_GetVersion : show version information".to_string(),
