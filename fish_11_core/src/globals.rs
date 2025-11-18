@@ -28,6 +28,7 @@ pub const KEY_EXCHANGE_TIMEOUT_SECONDS: u64 = 10;
 pub const MIRC_TYPICAL_BUFFER_SIZE: usize = 20480;
 
 pub const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CURRENT_YEAR: &str = "2025";
 
 pub const FUNCTION_TIMEOUT_SECONDS: Duration = Duration::from_secs(5);
 
