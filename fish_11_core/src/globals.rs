@@ -10,13 +10,15 @@ pub const MIRC_COMMAND: c_int = 2;
 pub const MIRC_IDENTIFIER: c_int = 3;
 pub const MIRC_ERROR: c_int = 4;
 
-// Default maximum bytes that can be returned to mIRC
 // Default maximum bytes that can be returned to mIRC. We still cap
 // the runtime-reported buffer size to a safe maximum below.
+// TODO : check if it is needed
 pub const DEFAULT_MIRC_BUFFER_SIZE: usize = 4096;
+
 // Maximum buffer size we will ever report to callers (including content, we'll
 // subtract one for the null terminator in get_buffer_size()). This prevents
 // accidentally writing too much to caller buffers; mIRC historically uses 900.
+// TODO : check if it is needed
 pub const MAX_MIRC_BUFFER_SIZE: usize = 900;
 
 /// Timeout duration for key exchange operations in seconds
@@ -26,7 +28,6 @@ pub const KEY_EXCHANGE_TIMEOUT_SECONDS: u64 = 10;
 pub const MIRC_TYPICAL_BUFFER_SIZE: usize = 20480;
 
 pub const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const CURRENT_YEAR: &str = "2025";
 
 pub const FUNCTION_TIMEOUT_SECONDS: Duration = Duration::from_secs(5);
 
