@@ -194,8 +194,8 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
-          cat > RELEASE_NOTES.md << 'EOF'
-          ## FiSH_11 Release ${{ steps.get_version.outputs.VERSION }}
+          cat > RELEASE_NOTES.md << EOF
+          ## FiSH_11 Release $VERSION
 
           ### What's New
           - Secure IRC encryption using X25519 key exchange
@@ -224,8 +224,11 @@ jobs:
           - Manual keys never expire unless explicitly removed
 
           Built on: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          Commit: ${{ github.sha }}
+          Commit: $GITHUB_SHA
           EOF
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+          GITHUB_SHA: ${{ github.sha }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
