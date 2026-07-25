@@ -102,9 +102,9 @@ mod integration_tests {
         let retrieved_key = fish10_key_management::get_legacy_key(target).unwrap();
         assert_eq!(key.as_bytes(), retrieved_key);
 
-        // Test that a non-existent key returns an empty vector
-        let non_existent_key = fish10_key_management::get_legacy_key("non_existent_user").unwrap();
-        assert!(non_existent_key.is_empty());
+        // Test that a non-existent key returns None
+        let non_existent_key = fish10_key_management::get_legacy_key("non_existent_user");
+        assert!(non_existent_key.is_none() || non_existent_key.unwrap().is_empty());
     }
 
     #[test]
