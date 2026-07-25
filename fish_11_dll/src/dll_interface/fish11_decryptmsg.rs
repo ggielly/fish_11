@@ -415,4 +415,12 @@ mod tests {
             assert_eq!(stripped, "test_encrypted_data");
         }
     }
+
+    #[test]
+    fn test_decryption_counter_increments() {
+        let before = config::get_decryption_count().unwrap_or(0);
+        config::increment_decryption_counter();
+        let after = config::get_decryption_count().unwrap_or(0);
+        assert!(after > before);
+    }
 }

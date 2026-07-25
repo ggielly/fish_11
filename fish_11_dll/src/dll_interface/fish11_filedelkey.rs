@@ -189,4 +189,34 @@ mod tests {
         assert_eq!(code, crate::dll_interface::MIRC_IDENTIFIER);
         assert!(msg.contains("defaultuser"));
     }
+
+    #[test]
+    fn test_roundtrip_set_get_delete_with_network() {
+        let key = [10u8; 32];
+        config::set_key("roundtrip_user", &key, Some("TestNet"), true, false).unwrap();
+
+        let retrieved = config::get_key("roundtrip_user", Some("TestNet")).unwrap();
+        assert_eq!(retrieved, key);
+
+        let (code, msg) = call_delkey("TestNet roundtrip_user", 256);
+        assert_eq!(code, crate::dll_interface::MIRC_IDENTIFIER);
+        assert!(msg.contains("roundtrip_user"));
+
+        assert!(config::get_key("roundtrip_user", Some("TestNet")).is_err());
+    }
+
+    #[test]
+    fn test_roundtrip_set_get_delete_default_network() {
+        let key = [11u8; 32];
+        config::set_key_default("roundtrip_default", &key, true).unwrap();
+
+        let retrieved = config::get_key_default("roundtrip_default").unwrap();
+        assert_eq!(retrieved, key);
+
+        let (code, msg) = call_delkey("roundtrip_default", 256);
+        assert_eq!(code, crate::dll_interface::MIRC_IDENTIFIER);
+        assert!(msg.contains("roundtrip_default"));
+
+        assert!(config::get_key_default("roundtrip_default").is_err());
+    }
 }

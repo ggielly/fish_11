@@ -268,4 +268,12 @@ mod tests {
         // Check that this is NOT a channel (so it will use private message path)
         assert!(!parts[0].starts_with(['#', '&']));
     }
+
+    #[test]
+    fn test_encryption_counter_increments() {
+        let before = config::get_encryption_count().unwrap_or(0);
+        config::increment_encryption_counter();
+        let after = config::get_encryption_count().unwrap_or(0);
+        assert!(after > before);
+    }
 }

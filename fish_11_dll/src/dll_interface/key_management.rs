@@ -227,7 +227,8 @@ mod tests {
     fn test_counter_increment_exists() {
         crate::config::increment_encryption_counter();
         crate::config::increment_decryption_counter();
-        let stats = crate::config::get_encryption_stats().unwrap();
-        assert!(stats.0 > 0 || stats.1 > 0);
+        let enc = crate::config::get_encryption_count().unwrap_or(0);
+        let dec = crate::config::get_decryption_count().unwrap_or(0);
+        assert!(enc > 0 || dec > 0);
     }
 }
