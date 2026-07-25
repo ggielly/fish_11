@@ -18,6 +18,27 @@ use crate::hook_ssl::{
 };
 use crate::pointer_validation::validate_function_pointer;
 
+/// Unwrap a `FARPROC` (guaranteed non-null) for subsequent transmute into
+/// a concrete Win32 function pointer type.
+///
+/// This deliberately does NOT perform the final transmute: the caller knows
+/// the exact ABI/signature and must do the `std::mem::transmute` itself with
+/// an appropriate SAFETY comment.  Keeping the transmute at the call site
+/// makes the contract explicit and avoids a generic `T: Copy` that would be
+/// too permissive (it would accept `usize`, `[u8; 8]`, etc.).
+///
+/// # Panics
+/// Panics if `ptr` is `None` (symbol not found).
+#[inline]
+unsafe fn unwrap_farproc(ptr: FARPROC) -> *const () {
+    let raw = ptr.expect("FARPROC was None — function pointer resolution failed");
+    // SAFETY: FARPROC is `Option<unsafe extern "system" fn() -> isize>`.
+    // `raw` is the inner fn pointer (guaranteed non-null by expect).
+    // We transmute to `*const ()` — a universal opaque pointer — so the caller
+    // can perform the final, typed `transmute` to its concrete function signature.
+    std::mem::transmute::<unsafe extern "system" fn() -> isize, *const ()>(raw)
+}
+
 /// Initialize the logger
 pub fn init_logger() {
     match logging::init_inject_logging() {
@@ -55,7 +76,9 @@ pub fn install_hooks() -> Result<(), io::Error> {
                 "Failed to resolve recv() function from ws2_32.dll",
             ));
         }
-        let recv_fn: RecvFn = std::mem::transmute_copy(&recv_ptr);
+        // SAFETY: recv_ptr is a valid FARPROC from GetProcAddress("recv") on ws2_32.dll.
+        // RecvFn matches the ABI (`extern "system"`) and signature of Winsock `recv`.
+        let recv_fn: RecvFn = std::mem::transmute(unwrap_farproc(recv_ptr));
         #[cfg(debug_assertions)]
         info!("install_hooks: recv function resolved at {:?}", recv_fn as *const ());
 
@@ -66,7 +89,9 @@ pub fn install_hooks() -> Result<(), io::Error> {
                 "Failed to resolve send() function from ws2_32.dll",
             ));
         }
-        let send_fn: SendFn = std::mem::transmute_copy(&send_ptr);
+        // SAFETY: send_ptr is a valid FARPROC from GetProcAddress("send") on ws2_32.dll.
+        // SendFn matches the ABI (`extern "system"`) and signature of Winsock `send`.
+        let send_fn: SendFn = std::mem::transmute(unwrap_farproc(send_ptr));
         #[cfg(debug_assertions)]
         info!("install_hooks: send function resolved at {:?}", send_fn as *const ());
 
@@ -77,7 +102,9 @@ pub fn install_hooks() -> Result<(), io::Error> {
                 "Failed to resolve connect() function from ws2_32.dll",
             ));
         }
-        let connect_fn: ConnectFn = std::mem::transmute_copy(&connect_ptr);
+        // SAFETY: connect_ptr is a valid FARPROC from GetProcAddress("connect") on ws2_32.dll.
+        // ConnectFn matches the ABI (`extern "system"`) and signature of Winsock `connect`.
+        let connect_fn: ConnectFn = std::mem::transmute(unwrap_farproc(connect_ptr));
         #[cfg(debug_assertions)]
         info!("install_hooks: connect function resolved at {:?}", connect_fn as *const ());
 
@@ -88,7 +115,9 @@ pub fn install_hooks() -> Result<(), io::Error> {
                 "Failed to resolve closesocket() function from ws2_32.dll",
             ));
         }
-        let closesocket_fn: ClosesocketFn = std::mem::transmute_copy(&closesocket_ptr);
+        // SAFETY: closesocket_ptr is a valid FARPROC from GetProcAddress("closesocket") on ws2_32.dll.
+        // ClosesocketFn matches the ABI (`extern "system"`) and signature of Winsock `closesocket`.
+        let closesocket_fn: ClosesocketFn = std::mem::transmute(unwrap_farproc(closesocket_ptr));
         #[cfg(debug_assertions)]
         info!("install_hooks: closesocket function resolved at {:?}", closesocket_fn as *const ());
 
@@ -126,7 +155,9 @@ pub fn install_hooks() -> Result<(), io::Error> {
             warn!("Could not find SSL_read function, skipping SSL hook installation.");
             return Ok(());
         }
-        let ssl_read: SslReadFn = std::mem::transmute_copy(&ssl_read_ptr);
+        // SAFETY: ssl_read_ptr is a valid FARPROC from GetProcAddress on a loaded SSL library.
+        // SslReadFn matches the ABI (`extern "C"`) and signature of OpenSSL `SSL_read`.
+        let ssl_read: SslReadFn = std::mem::transmute(unwrap_farproc(ssl_read_ptr));
         #[cfg(debug_assertions)]
         info!("install_hooks: SSL_read resolved at {:?}", ssl_read as *const ());
 
@@ -135,7 +166,9 @@ pub fn install_hooks() -> Result<(), io::Error> {
             warn!("Could not find SSL_write function, skipping SSL hook installation.");
             return Ok(());
         }
-        let ssl_write: SslWriteFn = std::mem::transmute_copy(&ssl_write_ptr);
+        // SAFETY: ssl_write_ptr is a valid FARPROC from GetProcAddress on a loaded SSL library.
+        // SslWriteFn matches the ABI (`extern "C"`) and signature of OpenSSL `SSL_write`.
+        let ssl_write: SslWriteFn = std::mem::transmute(unwrap_farproc(ssl_write_ptr));
         #[cfg(debug_assertions)]
         info!("install_hooks: SSL_write resolved at {:?}", ssl_write as *const ());
 
@@ -144,7 +177,9 @@ pub fn install_hooks() -> Result<(), io::Error> {
             warn!("Could not find SSL_get_fd function, skipping SSL hook installation.");
             return Ok(());
         }
-        let ssl_get_fd: SslGetFdFn = std::mem::transmute_copy(&ssl_get_fd_ptr);
+        // SAFETY: ssl_get_fd_ptr is a valid FARPROC from GetProcAddress on a loaded SSL library.
+        // SslGetFdFn matches the ABI (`extern "C"`) and signature of OpenSSL `SSL_get_fd`.
+        let ssl_get_fd: SslGetFdFn = std::mem::transmute(unwrap_farproc(ssl_get_fd_ptr));
         #[cfg(debug_assertions)]
         info!("install_hooks: SSL_get_fd resolved at {:?}", ssl_get_fd as *const ());
 
@@ -153,8 +188,10 @@ pub fn install_hooks() -> Result<(), io::Error> {
             warn!("Could not find SSL_is_init_finished function, skipping SSL hook installation.");
             return Ok(());
         }
+        // SAFETY: ssl_is_init_finished_ptr is a valid FARPROC from GetProcAddress on a loaded SSL library.
+        // SslIsInitFinishedProc matches the ABI (`extern "C"`) and signature of OpenSSL `SSL_is_init_finished`.
         let ssl_is_init_finished: SslIsInitFinishedProc =
-            std::mem::transmute_copy(&ssl_is_init_finished_ptr);
+            std::mem::transmute(unwrap_farproc(ssl_is_init_finished_ptr));
         #[cfg(debug_assertions)]
         info!(
             "install_hooks: SSL_is_init_finished resolved at {:?}",
@@ -309,10 +346,12 @@ unsafe fn get_winsock_function(func_name: &str) -> FARPROC {
     func_addr
 }
 
-/// Helper to handle mutex poisoning
+/// Helper to handle mutex poisoning — abort to prevent silent corruption.
+/// A poisoned mutex means a thread panicked while holding the lock, leaving
+/// shared state in an inconsistent state. Continuing with corrupted data is
+/// worse than crashing.
 pub fn handle_poison<T>(err: PoisonError<T>) -> T {
-    error!("Mutex poisoned: {}", err);
-    err.into_inner()
+    panic!("Mutex poisoned — aborting to prevent state corruption: {}", err);
 }
 
 #[cfg(test)]

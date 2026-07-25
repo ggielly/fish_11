@@ -241,4 +241,45 @@ mod tests {
         // In practice, the DLL would be called from mIRC with the input already in the buffer
         assert!(result >= 0); // Check that it doesn't crash
     }
+
+    #[test]
+    fn test_topic_roundtrip_set_get_remove() {
+        let channel = "#roundtrip_test";
+        let topic = "Hello roundtrip world!";
+
+        config::with_config_mut(|config| {
+            config::topics::set_topic(config, channel, topic)
+        }).unwrap();
+
+        let result = config::with_config(|config| {
+            config::topics::get_topic(config, channel)
+        }).unwrap();
+        assert_eq!(result, Some(topic.to_string()));
+
+        let removed = config::with_config_mut(|config| {
+            config::topics::remove_topic(config, channel)
+        }).unwrap();
+        assert!(removed);
+
+        let result = config::with_config(|config| {
+            config::topics::get_topic(config, channel)
+        }).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_get_topic_nonexistent_returns_none() {
+        let result = config::with_config(|config| {
+            config::topics::get_topic(config, "#nonexistent_channel")
+        }).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_remove_topic_nonexistent_returns_false() {
+        let removed = config::with_config_mut(|config| {
+            config::topics::remove_topic(config, "#nonexistent_channel")
+        }).unwrap();
+        assert!(!removed);
+    }
 }

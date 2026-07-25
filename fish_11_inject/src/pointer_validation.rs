@@ -40,7 +40,9 @@ pub unsafe fn validate_function_pointer(
         let end_addr = base_addr + mod_info.SizeOfImage as usize;
 
         // Transmute FARPROC (Option<fn>) to address
-        let func_addr: usize = std::mem::transmute_copy(&ptr);
+        // SAFETY: ptr is guaranteed non-null by the is_none() check above.
+        // FARPROC is repr(Option<fn()>); transmute extracts the raw address for range comparison.
+        let func_addr: usize = std::mem::transmute(ptr.unwrap());
 
         if func_addr < base_addr || func_addr >= end_addr {
             return Err(format!(
@@ -53,12 +55,16 @@ pub unsafe fn validate_function_pointer(
     Ok(())
 }
 
-/// Safe wrapper for transmuting function pointers after validation
+/// Transmute a validated `FARPROC` into a concrete function type `T`.
+///
+/// The caller must provide the concrete type `T` at the call site.
+/// The actual ABI/signature correctness is the caller's responsibility —
+/// this function only guarantees non-null and in-module-range.
 ///
 /// # Safety
-/// Caller must ensure that:
-/// - `ptr` is a valid pointer to machine code compatible with the signature `T`
-/// - `module` matches the module where the function is expected to reside
+/// Caller must ensure:
+/// - `T` is a function pointer type whose ABI and signature match the symbol
+/// - `module` matches the DLL where the function resides
 pub unsafe fn unsafe_transmute_validated<T: Copy>(
     ptr: FARPROC,
     module: Option<HMODULE>,
@@ -66,8 +72,13 @@ pub unsafe fn unsafe_transmute_validated<T: Copy>(
     // 1. Validate the pointer
     validate_function_pointer(ptr, module)?;
 
-    // 2. Transmute
-    // We use std::mem::transmute_copy to handle the FARPROC (Option<...>) to T conversion
-    let func: T = std::mem::transmute_copy(&ptr);
+    // 2. Transmute — the caller chose T, so we trust it matches the symbol.
+    //    FARPROC is repr(Option<fn()>); unwrap is safe because validate
+    //    already rejected None.
+    //    `transmute_copy` is required here because `T` is generic and `transmute`
+    //    cannot be used with unsized or generic types. `T: Copy` ensures the
+    //    source (fn pointer, pointer-sized) can be safely bit-copied into T.
+    let raw = ptr.unwrap();
+    let func: T = std::mem::transmute_copy(&raw);
     Ok(func)
 }

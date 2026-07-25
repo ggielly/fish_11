@@ -155,4 +155,38 @@ mod tests {
         // It should return an error message (key not found or similar)
         assert!(c_str.to_string_lossy().len() > 0);
     }
+
+    #[test]
+    fn test_delkey_with_network_parameter() {
+        let test_key = [2u8; 32];
+        config::set_key("netuser", &test_key, Some("EFnet"), true, false).unwrap();
+
+        let (code, msg) = call_delkey("EFnet netuser", 256);
+        assert_eq!(code, crate::dll_interface::MIRC_IDENTIFIER);
+        assert!(msg.contains("netuser"));
+    }
+
+    #[test]
+    fn test_delkey_network_only_deletes_correct_key() {
+        let test_key1 = [3u8; 32];
+        let test_key2 = [4u8; 32];
+        config::set_key("multiuser", &test_key1, Some("EFnet"), true, false).unwrap();
+        config::set_key("multiuser", &test_key2, Some("QuakeNet"), true, false).unwrap();
+
+        let (code, _msg) = call_delkey("EFnet multiuser", 256);
+        assert_eq!(code, crate::dll_interface::MIRC_IDENTIFIER);
+
+        assert!(config::get_key("multiuser", Some("EFnet")).is_err());
+        assert!(config::get_key("multiuser", Some("QuakeNet")).is_ok());
+    }
+
+    #[test]
+    fn test_delkey_no_network_defaults_to_default() {
+        let test_key = [5u8; 32];
+        config::set_key_default("defaultuser", &test_key, true).unwrap();
+
+        let (code, msg) = call_delkey("defaultuser", 256);
+        assert_eq!(code, crate::dll_interface::MIRC_IDENTIFIER);
+        assert!(msg.contains("defaultuser"));
+    }
 }

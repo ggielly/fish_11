@@ -752,15 +752,32 @@ on *:INPUT:*: {
   
   var %encrypted = $null
   
-  ; Check if target is a channel with FCEP-1 or manual key
-  if ($left(%target, 1) == # || $left(%target, 1) == &) {
-    ; Channel target - try FiSH 11 encryption (handles both manual and FCEP-1 keys)
+  ; Determine if target is a channel or private message
+  ; Use window type check as primary method (more robust than character check)
+  var %is_channel = $false
+  if ($window(%target).type == channel) {
+    %is_channel = $true
+  }
+  elseif ($left(%target, 1) == # || $left(%target, 1) == &) {
+    %is_channel = $true
+  }
+
+  if (%is_channel) {
+    ; Channel target - always try FiSH 11 encryption (handles manual and FCEP-1 keys)
     %encrypted = $dll(%Fish11DllFile, FiSH11_EncryptMsg, %target %message)
+
+    ; If FiSH11 failed (no channel key found), try legacy as fallback
+    if ($left(%encrypted, 5) == Error || $left(%encrypted, 6) == Legacy || %encrypted == $null) {
+      var %has_legacy_key = $dll(%Fish11DllFile, FiSH10_HasKey, %target)
+      if (%has_legacy_key == 1) {
+        %encrypted = $dll(%Fish11DllFile, FiSH10_EncryptMsg, %target %message)
+      }
+    }
   }
   else {
     ; Private message - check for legacy key first
     var %has_legacy_key = $dll(%Fish11DllFile, FiSH10_HasKey, %target)
-    
+
     if (%has_legacy_key == 1) {
       ; Use FiSH 10 legacy encryption (Blowfish)
       %encrypted = $dll(%Fish11DllFile, FiSH10_EncryptMsg, %target %message)
@@ -775,23 +792,26 @@ on *:INPUT:*: {
   ; Check for various error indicators: "Error", "no encryption", empty result, or legacy errors
   if (%encrypted != $null && $left(%encrypted, 5) != Error && $left(%encrypted, 13) != no encryption && $left(%encrypted, 6) != Legacy) {
     ; Add encryption mark if configured
+    ; Save active window for display (echo needs the actual window, not the target)
+    var %display_win = $active
+
     if (%mark_outgoing == [On]) {
       if (%mark_style == 1) {
         ; Suffix style
-        echo $color(own text) -t %target < $+ $me $+ > %message $+ $chr(183)
+        echo $color(own text) -t %display_win < $+ $me $+ > %message $+ $chr(183)
       }
       else if (%mark_style == 2) {
         ; Prefix style
-        echo $color(own text) -t %target $chr(183) $+ < $+ $me $+ > %message
+        echo $color(own text) -t %display_win $chr(183) $+ < $+ $me $+ > %message
       }
       else if (%mark_style == 3) {
         ; Colored brackets style
-        echo $color(own text) -t %target $chr(91) $+ $chr(43) $+ $chr(93) < $+ $me $+ > %message
+        echo $color(own text) -t %display_win $chr(91) $+ $chr(43) $+ $chr(93) < $+ $me $+ > %message
       }
     }
     else {
       ; Display message without encryption mark
-      echo $color(own text) -t %target < $+ $me $+ > %message
+      echo $color(own text) -t %display_win < $+ $me $+ > %message
     }
     
     ; Send encrypted message based on command type

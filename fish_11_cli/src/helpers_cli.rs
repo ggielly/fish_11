@@ -1,4 +1,3 @@
-//use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Component, Path};
 
@@ -17,23 +16,6 @@ fn is_safe_path<P: AsRef<Path>>(path: P) -> bool {
         }
     }
     true
-}
-
-// Macro for conditional printing based on quiet mode
-// Note: This needs to match the behavior of the macro in main.rs
-// We assume QUIET_MODE is available via crate::QUIET_MODE
-macro_rules! info_print {
-    ($($arg:tt)*) => {
-        if let Ok(guard) = crate::QUIET_MODE.read() {
-            if !*guard {
-                println!($($arg)*);
-            }
-        } else {
-            // If the lock is poisoned, default to printing (not quiet)
-            eprintln!("Warning: QUIET_MODE lock was poisoned, defaulting to not quiet");
-            println!($($arg)*);
-        }
-    };
 }
 
 /// Validates that a config file exists and is accessible

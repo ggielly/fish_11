@@ -7,7 +7,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use log::{error, warn};
+use log::error;
 
 use crate::ENGINES;
 use crate::engines::InjectEngines;
@@ -79,8 +79,10 @@ pub fn try_lock_timeout<T>(mutex: &Mutex<T>, timeout: Duration) -> TryLockResult
         match mutex.try_lock() {
             Ok(guard) => return Ok(guard),
             Err(std::sync::TryLockError::Poisoned(poisoned)) => {
-                warn!("Mutex poisoned, recovering inner value");
-                return Ok(poisoned.into_inner());
+                // A poisoned mutex indicates a prior panic while the lock was held.
+                // Recovering silently would risk using corrupted shared state.
+                // Panic here to surface the corruption immediately.
+                panic!("Mutex poisoned — aborting to prevent state corruption: {}", poisoned);
             }
             Err(std::sync::TryLockError::WouldBlock) => {
                 if start.elapsed() >= timeout {
@@ -107,12 +109,13 @@ pub fn try_lock_extended<T>(mutex: &Mutex<T>) -> TryLockResult<'_, T> {
     try_lock_timeout(mutex, EXTENDED_LOCK_TIMEOUT)
 }
 
-/// Handle mutex poisoning by recovering the inner value.
+/// Handle mutex poisoning by aborting to prevent silent state corruption.
 ///
-/// This is the existing helper moved here for consistency.
+/// A poisoned mutex means a thread panicked while holding the lock,
+/// leaving shared state in an unknown/inconsistent condition. Continuing
+/// with potentially corrupted data is worse than crashing.
 pub fn handle_poison<T>(err: PoisonError<T>) -> T {
-    error!("Mutex poisoned: {}", err);
-    err.into_inner()
+    panic!("Mutex poisoned — aborting to prevent state corruption: {}", err);
 }
 
 /// Safe access to the global ENGINES mutex with proper error handling.
@@ -132,15 +135,8 @@ pub fn try_lock_engines() -> TryLockResult<'static, Option<Arc<InjectEngines>>> 
             Err(TryLockError::Timeout)
         }
         Err(TryLockError::Poisoned) => {
-            error!("ENGINES mutex was poisoned - attempting recovery");
-            // Try to recover by getting the lock with poison recovery
-            match ENGINES.lock() {
-                Ok(guard) => Ok(guard),
-                Err(poisoned) => {
-                    error!("ENGINES mutex poisoned and recovery failed");
-                    Ok(poisoned.into_inner())
-                }
-            }
+            // Poison already logged by try_lock_timeout; propagate the error.
+            Err(TryLockError::Poisoned)
         }
     }
 }

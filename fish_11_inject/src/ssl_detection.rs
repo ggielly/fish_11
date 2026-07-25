@@ -49,9 +49,10 @@ unsafe fn get_openssl_version(module: HMODULE) -> Option<String> {
 
         if version_fn.is_some() {
             if func_name == &"OPENSSL_VERSION_TEXT" {
-                // This is a string constant
-                // Transmute FARPROC (Option<fn>) to *const i8
-                let version_ptr: *const i8 = std::mem::transmute_copy(&version_fn);
+                // This is a string constant, not a function.
+                // SAFETY: version_fn is guaranteed Some by the is_some() check above.
+                // OPENSSL_VERSION_TEXT is a static const char*, ABI-compatible with *const i8.
+                let version_ptr: *const i8 = std::mem::transmute(version_fn.unwrap());
 
                 if !version_ptr.is_null() {
                     let version_cstr = std::ffi::CStr::from_ptr(version_ptr);
@@ -100,9 +101,12 @@ unsafe fn find_ssl_functions(module: HMODULE) -> Option<(*const u8, *const u8)> 
         return None;
     }
 
-    // Transmute FARPROC to *const u8
-    let read_ptr: *const u8 = std::mem::transmute_copy(&ssl_read);
-    let write_ptr: *const u8 = std::mem::transmute_copy(&ssl_write);
+    // SAFETY: Both ssl_read and ssl_write are guaranteed Some by the is_none() check above.
+    // We transmute to *const u8 for address comparison / raw pointer storage.
+    // These are not called through this pointer — actual calls go through the
+    // generic_detour trampoline installed elsewhere.
+    let read_ptr: *const u8 = std::mem::transmute(ssl_read.unwrap());
+    let write_ptr: *const u8 = std::mem::transmute(ssl_write.unwrap());
 
     Some((read_ptr, write_ptr))
 }
