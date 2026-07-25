@@ -581,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "fish_11_core"
-version = "11.25.0"
+version = "11.26.0"
 dependencies = [
  "argon2",
  "base64",
@@ -606,7 +606,7 @@ dependencies = [
 
 [[package]]
 name = "fish_11_inject"
-version = "11.25.0"
+version = "11.26.0"
 dependencies = [
  "bytes",
  "dashmap",

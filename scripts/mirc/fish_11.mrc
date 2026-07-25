@@ -960,7 +960,7 @@ alias -l fish11_try_decrypt_channel {
 
 
 ; === INCOMING PRIVATE MESSAGES ===
-on *:TEXT:*:?:{
+on ^*:TEXT:*:?:{
   ; Try to decrypt the message
   var %decrypted = $fish11_try_decrypt_incoming($nick, $1-)
   
@@ -969,9 +969,22 @@ on *:TEXT:*:?:{
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Message text) -dm $nick *** Decrypted: %decrypted
+      ; Get encryption mark from config
+      var %mark_pos = $fish11_GetIniIntValue(mark_position 1)
+      var %mark_enc = $fish11_GetIniValue(mark_encrypted)
+      if (%mark_enc == $null) { %mark_enc = $chr(183) }
+
+      if (%mark_pos == 2) {
+        ; Prefix mark
+        echo $color(Message text) -t $nick %mark_enc $+ < $+ $nick $+ > %decrypted
+      }
+      else {
+        ; Suffix mark (default)
+        echo $color(Message text) -t $nick < $+ $nick $+ > %decrypted $+ $chr(32) $+ %mark_enc
+      }
     }
-    ; Let the inject DLL or normal processing handle the rest
+    haltdef
+    halt
   }
 }
 
@@ -986,7 +999,7 @@ on *:TEXT:*:#:{
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Message text) -dm $chan *** Decrypted: %decrypted
+      echo $color(Message text) -t $chan *** Decrypted: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
   }
@@ -1003,7 +1016,7 @@ on *:NOTICE:*:?:{
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Mode text) -dm $nick *** Decrypted notice: %decrypted
+      echo $color(Mode text) -t $nick *** Decrypted notice: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
   }
@@ -1020,7 +1033,7 @@ on *:ACTION:*:?:{
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Action text) -dm $nick *** Decrypted action: %decrypted
+      echo $color(Action text) -t $nick *** Decrypted action: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
   }
@@ -1037,7 +1050,7 @@ on *:ACTION:*:#:{
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Action text) -dm $chan *** Decrypted action: %decrypted
+      echo $color(Action text) -t $chan *** Decrypted action: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
   }
@@ -1054,7 +1067,7 @@ on *:NOTICE:*:#:{
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Mode text) -dm $chan *** Decrypted notice: %decrypted
+      echo $color(Mode text) -t $chan *** Decrypted notice: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
   }

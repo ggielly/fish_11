@@ -1,6 +1,6 @@
 [package]
 name = "fish_11_inject"
-version = "11.25.0"
+version = "11.26.0"
 edition = "2021"
 authors = ["GuY"]
 description = "FiSH_11 - secure encryption for mIRC : the Windows DLL injection and socket hooking for mIRC"

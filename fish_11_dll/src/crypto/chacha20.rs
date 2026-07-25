@@ -252,7 +252,7 @@ pub fn advance_ratchet_key(
 
     let mut next_key = [0u8; 32];
 
-    let info = format!("FCEP-1-RATCHET:{}", channel_name);
+    let info = format!("FCEP-1-RATCHET{}", channel_name.to_lowercase());
 
     hkdf.expand(info.as_bytes(), &mut next_key).map_err(|e| {
         temp_current.zeroize();
@@ -511,13 +511,14 @@ mod tests {
         }
 
         assert_eq!(state.epoch, 6, "Epoch should be 6 after 6 advances");
+        // MAX_PREVIOUS_KEYS = 5, so window holds exactly 5 keys after 6 advances
         assert_eq!(
             state.previous_keys.len(),
-            2,
-            "Previous keys should be capped at MAX_PREVIOUS_KEYS"
+            5,
+            "Previous keys should be capped at MAX_PREVIOUS_KEYS (5)"
         );
 
-        // Oldest key (initial_key) should be evicted
+        // Oldest key (initial_key) should be evicted after window fills
         assert!(
             !state.previous_keys.contains(&initial_key),
             "Oldest key should be evicted from window"

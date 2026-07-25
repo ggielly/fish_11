@@ -100,8 +100,10 @@ dll_function_identifier!(FiSH11_DecryptMsg, data, {
                     cause: "Could not convert slice to 12-byte nonce array".to_string(),
                 })?;
 
-            // Anti-replay check (read-only)
-            if crypto::chacha20::is_nonce_replay(&nonce)? {
+            // Anti-replay check using per-channel nonce cache (RFC FCEP-1 §6.3)
+            // The global NONCE_CACHE is NOT used here — we use the channel-partitioned
+            // cache to prevent cross-channel nonce collision blocking legitimate messages.
+            if config::state_management::check_nonce(target, &nonce)? {
                 return Err(DllError::ReplayAttackDetected { channel: target.to_string() });
             }
 
@@ -167,9 +169,9 @@ dll_function_identifier!(FiSH11_DecryptMsg, data, {
             })?;
 
             if let Some(plaintext) = decrypted {
-                // Add nonce to cache ONLY after successful decryption
-                crypto::chacha20::mark_nonce_seen(&nonce)?;
-                // Config automatic save is not triggered for nonce cache as it's memory-only/lazy_static in chacha20.rs
+                // Add nonce to per-channel cache ONLY after successful decryption
+                // Using channel-partitioned cache per RFC FCEP-1 §6.3
+                config::state_management::add_nonce(target, nonce)?;
                 #[cfg(debug_assertions)]
                 log_debug!("Successfully decrypted ratchet message for {}", target);
 

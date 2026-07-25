@@ -1,6 +1,8 @@
 use std::io::Read;
 use std::path::{Component, Path};
 
+use crate::QUIET_MODE;
+
 /// Helper function to check if a path contains directory traversal sequences
 /// Returns true if the path is safe, false if it contains traversal attempts
 fn is_safe_path<P: AsRef<Path>>(path: P) -> bool {

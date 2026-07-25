@@ -84,6 +84,20 @@ Table of Contents
    easy to implement within existing FiSH-11 clients, and to minimize the
    impact on the user experience.
 
+   Design Note: FCEP-1 uses a symmetric key ratchet (similar to the
+   symmetric component of Signal's Double Ratchet) to provide forward
+   secrecy. Unlike Signal's Double Ratchet, which combines an asymmetric
+   DH ratchet with a symmetric KDF ratchet, FCEP-1 employs only the
+   symmetric component. This design choice is motivated by the IRC
+   environment: IRC channels are transient, membership is dynamic, and
+   there is no persistent session state between members. A full Double
+   Ratchet would require per-pair ephemeral key agreements (similar to
+   Signal's X3DH), which is impractical in a multi-user channel without
+   a coordination mechanism. FCEP-1 instead relies on a trusted
+   coordinator model (hub-and-spoke) for initial key distribution, which
+   is simpler to implement and deploy in existing IRC clients. See
+   Section 10.8 for a detailed comparison with the Signal protocol.
+
 2. Terminology
 
    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
@@ -370,20 +384,49 @@ Table of Contents
    - This provides a balance between forward secrecy (old keys are
      eventually discarded) and robustness (tolerating some reordering).
 
-7.3. Post-Compromise Recovery
+7.3. Post-Compromise Security
 
-   The key ratcheting mechanism provides post-compromise security (PCS).
+   The symmetric key ratcheting mechanism provides post-compromise security
+   (PCS), but with important limitations compared to protocols that use
+   asymmetric ratcheting (e.g., Signal's Double Ratchet).
+
+   Symmetric-Only PCS:
    If an attacker compromises the current channel key:
 
-   - The attacker can decrypt messages until the next ratchet advancement.
-   - Once the ratchet advances (after the next message is sent by any
-     participant), the compromised key becomes useless.
-   - The attacker cannot derive future keys from the compromised key due
-     to the one-way nature of HKDF.
+   - The attacker can decrypt messages encrypted with the compromised key.
+   - The attacker CANNOT derive future keys from the compromised key due
+     to the one-way nature of HKDF (assuming the attacker does not
+     intercept the ratchet output).
+   - Once the ratchet advances (after the next message is sent), the
+     compromised key becomes useless for decrypting future messages.
 
    Recovery Time:
-   - In an active channel, PCS recovery occurs within seconds to minutes.
+   - In an active channel, PCS recovery occurs within seconds to minutes
+     (after the next ratchet step by any participant).
    - In an inactive channel, recovery requires manual re-keying.
+
+   Limitation — No Asymmetric Ratchet:
+   Unlike Signal's Double Ratchet, which combines a symmetric KDF chain
+   with an asynchronous DH ratchet (generating fresh ephemeral key pairs
+   at each step), FCEP-1 uses only symmetric ratcheting. This means:
+
+   - FCEP-1 does NOT achieve "instant" PCS recovery through new DH key
+     agreements. Recovery depends entirely on the next symmetric ratchet
+     step occurring.
+   - If an attacker compromises the channel key AND intercepts the
+     ratchet output (the encrypted message and its nonce), they can
+     derive the next key and continue decrypting. Signal's DH ratchet
+     prevents this by introducing fresh entropy from a new DH exchange.
+   - In Signal, even if the current key is compromised, the next DH
+     ratchet step generates a completely independent key that the
+     attacker cannot predict. FCEP-1 cannot provide this guarantee.
+
+   Practical Implication:
+   FCEP-1's PCS is sufficient for typical IRC usage where channels are
+   active and messages flow frequently. However, for high-security
+   scenarios requiring guaranteed recovery even against an active
+   interception attacker, a protocol with asymmetric ratcheting (such
+   as Signal's Double Ratchet or MLS) should be considered.
 
    Manual Recovery:
    - If key compromise is suspected, the coordinator SHOULD immediately
@@ -684,3 +727,87 @@ Table of Contents
    Implementation note: even with CSPRNG, the 12-byte nonce space allows
    approximately 2^48 messages before birthday collision becomes probable.
    This is sufficient for all practical IRC usage.
+
+10.8. Comparison with the Signal Protocol
+
+   This section compares FCEP-1 with the Signal Protocol (Double Ratchet
+   + X3DH) to clarify design trade-offs and limitations.
+
+   Key Agreement:
+   - Signal uses X3DH (Extended Triple Diffie-Hellman) for asynchronous
+     key agreement between pairs of users, requiring no online
+     coordinator. Each user publishes long-term identity keys and
+     one-time pre-keys on a server.
+   - FCEP-1 uses a coordinator-based model (hub-and-spoke) where one
+     user generates the channel key and distributes it via pre-shared
+     keys. This requires the coordinator to be online and trusted.
+   - Trade-off: X3DH is more decentralized and provides better
+     deniability, but requires server infrastructure for key publishing.
+     FCEP-1 works with plain IRC servers but introduces a single point
+     of trust (the coordinator).
+
+   Ratcheting:
+   - Signal uses a Double Ratchet combining: (1) an asymmetric DH ratchet
+     that generates new ephemeral key pairs at each step, and (2) a
+     symmetric KDF chain for message keys. The DH ratchet provides
+     "ratcheting forward" even against an attacker who compromises the
+     current key, because each step introduces fresh DH-derived entropy.
+   - FCEP-1 uses only a symmetric KDF ratchet (HKDF-SHA256). There is
+     no DH ratchet component. Forward secrecy is achieved by the one-way
+     property of HKDF, but post-compromise security depends on the
+     attacker not intercepting the ratchet output.
+   - Trade-off: The Double Ratchet provides stronger PCS (guaranteed
+     recovery even against active interception) but requires per-message
+     DH operations, which are more expensive. FCEP-1's symmetric-only
+     ratchet is lighter weight but provides weaker PCS.
+
+   Group Encryption:
+   - Signal does not natively support group encryption. Group messaging
+     in Signal uses the MLS (Messaging Layer Security) protocol, which
+     provides tree-based key agreement with efficient member
+     addition/removal.
+   - FCEP-1 handles groups through the coordinator distributing the same
+     channel key to all members. This is simpler but less scalable and
+     does not support efficient member removal (all members must re-key).
+
+   Out-of-Order Messages:
+   - Signal handles out-of-order messages by storing "skipped message
+     keys" in a dictionary indexed by message number. This allows
+     decryption of messages that arrive out of order without limit
+     (bounded only by storage).
+   - FCEP-1 handles out-of-order messages by maintaining a window of
+     recent previous keys (recommended: 5). Messages arriving more than
+     5 positions out of order cannot be decrypted. This is a practical
+     trade-off for IRC where deep reordering is rare.
+
+   Trust Model:
+   - Signal: each user trusts only their own device and the Signal
+     server (for key distribution). No single user can compromise the
+     entire group.
+   - FCEP-1: all members trust the coordinator. If the coordinator is
+     compromised, all channel keys are exposed. Additionally, departed
+     members retain all previously received keys and can decrypt past
+     messages.
+
+   Summary Table:
+
+   +---------------------------+----------------+------------------+
+   | Property                  | Signal (MLS)   | FCEP-1           |
+   +---------------------------+----------------+------------------+
+   | Key agreement             | X3DH (async)   | Hub-and-spoke    |
+   | Ratchet type              | Double (DH+KDF)| Symmetric only   |
+   | Forward secrecy           | Strong         | Strong           |
+   | Post-compromise security  | Strong (DH)    | Moderate (KDF)   |
+   | Group support             | Via MLS        | Native (simple)  |
+   | Out-of-order tolerance    | Unlimited      | Window (5 keys)  |
+   | Coordinator required      | No             | Yes              |
+   | Server infrastructure     | Key server     | None (plain IRC) |
+   | Member removal efficiency | O(log N)       | O(N) (full rekey)|
+   +---------------------------+----------------+------------------+
+
+   Conclusion: FCEP-1 is designed for the specific constraints of IRC
+   (plain servers, transient channels, dynamic membership) where
+   deploying X3DH or MLS infrastructure is impractical. It provides
+   good forward secrecy and adequate post-compromise security for
+   typical IRC usage, but should not be considered equivalent to
+   Signal's Double Ratchet in terms of security guarantees.

@@ -33,11 +33,17 @@ pub fn derive_master_key_with_salt(
     };
 
     // Create Argon2id instance with parameters
+    // Use lighter params in test mode to avoid timeouts (~50ms vs ~500ms per derivation)
+    #[cfg(not(test))]
+    let (m_cost, t_cost, p_cost) = (65536, 3, 4); // 64 MB, 3 iterations, 4 lanes
+    #[cfg(test)]
+    let (m_cost, t_cost, p_cost) = (1024, 1, 1); // 1 MB, 1 iteration, 1 lane
+
     let params = Params::new(
-        65536,    // memory cost (64 MB)
-        3,        // time cost
-        4,        // parallelism
-        Some(32), // output length
+        m_cost,    // memory cost
+        t_cost,    // time cost
+        p_cost,    // parallelism
+        Some(32),  // output length
     )
     .map_err(|e| format!("Argon2 params error: {}", e))?;
 

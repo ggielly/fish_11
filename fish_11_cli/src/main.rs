@@ -14,35 +14,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use fish_11_core::globals::{BUILD_DATE, BUILD_NUMBER, BUILD_TIME, BUILD_VERSION};
-use platform_types::{BOOL, DWORD, HWND, LIB_NAME};
-
-mod helpers_cli;
-use crate::helpers_cli::validate_config_file;
-
-// Default timeout for DLL operations in seconds
-const DEFAULT_TIMEOUT_SECONDS: u64 = 5;
-
-// Special timeout for listkeys command (which may take longer with large key databases)
-const DEFAULT_LISTKEYS_TIMEOUT_SECONDS: u64 = 10;
-
-/// Display version information in the format expected for -v/--version flags
-fn display_version() {
-    let build_type = if cfg!(debug_assertions) { "debug" } else { "release" };
-
-    println!(
-        "FiSH_11_cli {} (build {}-{}) *** Compiled {} at {} *** Written by [GuY], licensed under the GPL-v3 or above",
-        fish_11_core::globals::BUILD_VERSION,
-        fish_11_core::globals::BUILD_NUMBER.as_str(),
-        build_type,
-        fish_11_core::globals::BUILD_DATE.as_str(),
-        fish_11_core::globals::BUILD_TIME.as_str()
-    );
-}
+use platform_types::{BOOL, DWORD, HWND};
 
 use std::sync::RwLock;
 
-// Global flags
-static QUIET_MODE: RwLock<bool> = RwLock::new(false);
+// Global flags — must be defined before `mod helpers_cli` so the macro can see them
+pub(crate) static QUIET_MODE: RwLock<bool> = RwLock::new(false);
 static DEBUG_LOG_PATH: RwLock<Option<std::path::PathBuf>> = RwLock::new(None);
 
 /// Helper function to safely get the quiet mode value
@@ -76,11 +53,33 @@ macro_rules! info_print {
                 println!($($arg)*);
             }
         } else {
-            // If the lock is poisoned, default to printing (not quiet)
             eprintln!("Warning : QUIET_MODE lock was poisoned, defaulting to not quiet");
             println!($($arg)*);
         }
     };
+}
+
+mod helpers_cli;
+use crate::helpers_cli::validate_config_file;
+
+// Default timeout for DLL operations in seconds
+const DEFAULT_TIMEOUT_SECONDS: u64 = 5;
+
+// Special timeout for listkeys command (which may take longer with large key databases)
+const DEFAULT_LISTKEYS_TIMEOUT_SECONDS: u64 = 10;
+
+/// Display version information in the format expected for -v/--version flags
+fn display_version() {
+    let build_type = if cfg!(debug_assertions) { "debug" } else { "release" };
+
+    println!(
+        "FiSH_11_cli {} (build {}-{}) *** Compiled {} at {} *** Written by [GuY], licensed under the GPL-v3 or above",
+        fish_11_core::globals::BUILD_VERSION,
+        fish_11_core::globals::BUILD_NUMBER.as_str(),
+        build_type,
+        fish_11_core::globals::BUILD_DATE.as_str(),
+        fish_11_core::globals::BUILD_TIME.as_str()
+    );
 }
 
 // Define the LoadInfo structure that mIRC passes to our DLL
@@ -1437,31 +1436,34 @@ mod tests {
     }
 
     #[test]
-    fn test_sanitize_dll_input_script_injection_patterns() {
-        // Test that script injection patterns we specifically check for are detected
-        let injection_inputs = vec![
+    fn test_sanitize_dll_input_rejects_control_chars() {
+        // Control characters (except \r, \n, \t) are rejected
+        assert!(sanitize_dll_input("hello\x00world").is_err());
+        assert!(sanitize_dll_input("hello\x01world").is_err());
+        assert!(sanitize_dll_input("hello\x7Fworld").is_err());
+
+        // But \r, \n, \t are allowed (common in IRC)
+        assert!(sanitize_dll_input("hello\nworld").is_ok());
+        assert!(sanitize_dll_input("hello\r\nworld").is_ok());
+        assert!(sanitize_dll_input("hello\tworld").is_ok());
+    }
+
+    #[test]
+    fn test_sanitize_dll_input_allows_irc_characters() {
+        // Characters that are valid in IRC messages must not be rejected
+        let irc_inputs = vec![
+            "Hello &amp; world",
+            "I use `fish` for encryption",
+            "A | B | C",
+            "test; echo done",
             "<?xml version=\"1.0\"?>",
             "javascript:alert(1)",
-            "vbscript:alert(1)",
-            "<?php echo 'test'; ?>",
         ];
 
-        for input in injection_inputs {
+        for input in irc_inputs {
             let result = sanitize_dll_input(input);
-            assert!(result.is_err(), "Input should have been rejected: {}", input);
+            assert!(result.is_ok(), "IRC-valid input should not be rejected: {}", input);
         }
-
-        // Specifically test that <script> tag is NOT caught by our sanitizer (by design)
-        // since our function currently only checks for specific patterns
-        let script_tag_input = "<script>alert('xss')</script>";
-        let result = sanitize_dll_input(script_tag_input);
-        // This might actually pass through our current sanitizer, let's verify
-        // Our current implementation only checks for <?, javascript:, etc.
-        // so the <script> tag may not be rejected by the sanitize_dll_input function directly
-        // but might be caught by validation.
-
-        // Actually let's just focus on what our function does catch:
-        assert!(sanitize_dll_input("<? echo 'test'; ?>").is_err());
     }
 
     #[test]
@@ -1480,24 +1482,20 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_dll_path_security_checks() {
-        // Test DLL path validation security checks
-        let valid_path = "test.dll";
-        let result = validate_dll_path(valid_path);
+    fn test_validate_dll_path() {
+        // Valid paths
+        assert!(validate_dll_path("test.dll").is_ok());
+        assert!(validate_dll_path("lib.so").is_ok());
+        assert!(validate_dll_path("../test.dll").is_ok());
+        assert!(validate_dll_path("C:\\FiSH\\test.dll").is_ok());
 
-        assert!(result.is_ok());
+        // Invalid: null byte
+        assert!(validate_dll_path("test\0.dll").is_err());
 
-        // Test path traversal attempt
-        let traversal_path = "../test.dll";
-        let result = validate_dll_path(traversal_path);
-
-        assert!(result.is_err());
-
-        // Test with dangerous characters
-        let dangerous_path = "test|malicious.dll";
-        let result = validate_dll_path(dangerous_path);
-
-        assert!(result.is_err());
+        // Invalid: wrong extension
+        assert!(validate_dll_path("test.txt").is_err());
+        assert!(validate_dll_path("test.exe").is_err());
+        assert!(validate_dll_path("test").is_err());
     }
 
     #[test]

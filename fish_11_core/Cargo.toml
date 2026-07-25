@@ -1,6 +1,6 @@
 [package]
 name = "fish_11_core"
-version = "11.25.0"
+version = "11.26.0"
 edition = "2021"
 authors = ["GuY"]
 description = "FiSH_11 - Core utilities (platform-independent)"
