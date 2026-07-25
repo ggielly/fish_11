@@ -1650,8 +1650,8 @@ menu channel {
   ..Manual key : fish11_set_manual_key_dialog $chan
   ..FCEP-1 key : fish11_init_fcep_dialog $chan
   .Encrypt topic
-  ..Enable topic encryption :{ fish11_SetChannelIniValue $chan encrypt_topic 1 | echo $color(Mode text) -at *** FiSH: topic encryption enabled for $chan }
-  ..Disable topic encryption :{ fish11_SetChannelIniValue $chan encrypt_topic 0 | echo $color(Mode text) -at *** FiSH: topic encryption disabled for $chan }
+  ..Enable topic encryption :fish11_SetChannelIniValue $chan encrypt_topic 1
+  ..Disable topic encryption :fish11_SetChannelIniValue $chan encrypt_topic 0
   .-
   .Show channel key info : fish11_show_channel_key_info $chan
   .Remove channel key : fish11_remove_channel_key $chan
@@ -1835,16 +1835,16 @@ menu status,channel,nicklist,query {
   ..Disable :set %autokeyx [Off]
   .Misc config
   ..Encrypt outgoing [Status]
-  ...Enable :{ fish11_SetIniIntValue process_outgoing 1 | echo $color(Mode text) -at *** FiSH: outgoing message encryption enabled }
-  ...Disable :{ fish11_SetIniIntValue process_outgoing 0 | echo $color(Mode text) -at *** FiSH: outgoing message encryption disabled }
+  ...Enable :fish11_SetIniIntValue process_outgoing 1
+  ...Disable :fish11_SetIniIntValue process_outgoing 0
   ..Decrypt incoming [Status]
-  ...Enable :{ fish11_SetIniIntValue process_incoming 1 | echo $color(Mode text) -at *** FiSH: incoming message decryption enabled }
-  ...Disable :{ fish11_SetIniIntValue process_incoming 0 | echo $color(Mode text) -at *** FiSH: incoming message decryption disabled }
+  ...Enable :fish11_SetIniIntValue process_incoming 1
+  ...Disable :fish11_SetIniIntValue process_incoming 0
   ..-
   ..Crypt-mark (Incoming)
-  ...Prefix :{ fish11_SetIniIntValue mark_position 2 | echo $color(Mode text) -at *** FiSH: encryption mark set to prefix }
-  ...Suffix :{ fish11_SetIniIntValue mark_position 1 | echo $color(Mode text) -at *** FiSH: encryption mark set to suffix }
-  ...Disable :{ fish11_SetIniIntValue mark_position 0 | echo $color(Mode text) -at *** FiSH: encryption mark disabled }
+  ...Prefix :fish11_SetIniIntValue mark_position 2
+  ...Suffix :fish11_SetIniIntValue mark_position 1
+  ...Disable :fish11_SetIniIntValue mark_position 0
   ..Crypt-mark (Outgoing) $+ $chr(32) $+ %mark_outgoing
   ...Enable :set %mark_outgoing [On]
   ...Disable :set %mark_outgoing [Off]
@@ -1868,14 +1868,14 @@ menu status,channel,nicklist,query {
   ...Enable :{ set %NickTrack [On] | echo $color(Mode text) -at *** FiSH: nick tracking enabled }
   ...Disable :{ set %NickTrack [Off] | echo $color(Mode text) -at *** FiSH: nick tracking disabled }
   ..Encrypt NOTICE [Status]
-  ...Enable :{ fish11_SetIniIntValue encrypt_notice 1 | echo $color(Mode text) -at *** FiSH: NOTICE encryption enabled }
-  ...Disable :{ fish11_SetIniIntValue encrypt_notice 0 | echo $color(Mode text) -at *** FiSH: NOTICE encryption disabled }
+  ...Enable :fish11_SetIniIntValue encrypt_notice 1
+  ...Disable :fish11_SetIniIntValue encrypt_notice 0
   ..Encrypt ACTION [Status]
-  ...Enable :{ fish11_SetIniIntValue encrypt_action 1 | echo $color(Mode text) -at *** FiSH: ACTION encryption enabled }
-  ...Disable :{ fish11_SetIniIntValue encrypt_action 0 | echo $color(Mode text) -at *** FiSH: ACTION encryption disabled }
+  ...Enable :fish11_SetIniIntValue encrypt_action 1
+  ...Disable :fish11_SetIniIntValue encrypt_action 0
   ..No legacy FiSH 10 [Status]
-  ...Enable :{ fish11_SetIniIntValue no_fish10_legacy 1 | echo $color(Mode text) -at *** FiSH: legacy FiSH 10 compatibility disabled }
-  ...Disable :{ fish11_SetIniIntValue no_fish10_legacy 0 | echo $color(Mode text) -at *** FiSH: legacy FiSH 10 compatibility enabled }
+  ...Enable :fish11_SetIniIntValue no_fish10_legacy 1
+  ...Disable :fish11_SetIniIntValue no_fish10_legacy 0
   ..-
   ..Open config file :fish11_ViewIniFile
   ..-
@@ -2013,7 +2013,13 @@ alias fish11_GetIniValue {
 }
 
 alias fish11_SetIniValue {
-  noop $dll(%Fish11DllFile, INI_SetString, $1 $2-)
+  var %result = $dll(%Fish11DllFile, INI_SetString, $1 $2-)
+  if ($left(%result, 6) == Error:) {
+    echo $color(Error) -at *** FiSH_11: failed to set $1 = $2- $+ : %result
+  }
+  else {
+    echo $color(Mode text) -at *** FiSH_11: $1 set to $2-
+  }
 }
 
 alias fish11_GetIniBoolValue {
@@ -2021,7 +2027,13 @@ alias fish11_GetIniBoolValue {
 }
 
 alias fish11_SetIniIntValue {
-  noop $dll(%Fish11DllFile, INI_SetInt, $1 $2-)
+  var %result = $dll(%Fish11DllFile, INI_SetInt, $1 $2-)
+  if ($left(%result, 6) == Error:) {
+    echo $color(Error) -at *** FiSH_11: failed to set $1 = $2- $+ : %result
+  }
+  else {
+    echo $color(Mode text) -at *** FiSH_11: $1 set to $2-
+  }
 }
 
 alias fish11_GetChannelIniValue {
@@ -2029,7 +2041,13 @@ alias fish11_GetChannelIniValue {
 }
 
 alias fish11_SetChannelIniValue {
-  noop $dll(%Fish11DllFile, INI_SetString, channel_ $+ $1 $+ _ $+ $2 $3-)
+  var %result = $dll(%Fish11DllFile, INI_SetString, channel_ $+ $1 $+ _ $+ $2 $3-)
+  if ($left(%result, 6) == Error:) {
+    echo $color(Error) -at *** FiSH_11: failed to set $2 for $1 $+ : %result
+  }
+  else {
+    echo $color(Mode text) -at *** FiSH_11: $2 set to $3- for $1
+  }
 }
 
 
