@@ -7,6 +7,7 @@ pub mod config_access;
 pub mod encrypted_file_storage;
 pub mod entries;
 pub mod file_storage;
+pub mod ini_helpers;
 pub mod key_management;
 pub mod manual_channel_keys;
 pub mod models;
