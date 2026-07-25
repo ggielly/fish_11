@@ -16,36 +16,26 @@ const ENCRYPTED_KEYSTORE_HEADER: &str = "# FiSH_11_ENCRYPTED_KEYSTORE_V1\n";
 /// Derive a system-specific key for encrypting the keystore
 /// This uses a combination of hardware identifiers and OS-specific information
 pub fn derive_system_specific_key() -> Result<[u8; 32], Box<dyn std::error::Error>> {
-    use std::process;
+    use std::env;
 
-    // In a real implementation, we would derive the key from system-specific information
-    // For now, we'll use a placeholder approach - in production, this should use
-    // hardware identifiers, OS version, etc.
-    let mut key_material = [0u8; 32];
+    let hostname = env::var("COMPUTERNAME").or_else(|_| env::var("HOSTNAME")).unwrap_or_default();
+    let username = env::var("USERNAME").or_else(|_| env::var("USER")).unwrap_or_default();
+    let current_dir = env::current_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
 
-    // Use process ID and current time as a basic system-specific element
-    // In a real implementation, we would use more robust system identifiers
-    let pid = process::id();
-    let pid_bytes = pid.to_le_bytes();
+    let mut seed = String::new();
+    seed.push_str(&hostname);
+    seed.push_str(&username);
+    seed.push_str(&current_dir);
+    seed.push_str("fish_11_keystore_encryption_salt");
 
-    // Copy PID bytes to key material
-    for (i, &byte) in pid_bytes.iter().enumerate() {
-        if i < key_material.len() {
-            key_material[i] = byte;
-        }
-    }
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(seed.as_bytes());
 
-    // Add some additional entropy based on current time
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
-    let time_bytes = now.to_le_bytes();
-    for (i, &byte) in time_bytes.iter().enumerate() {
-        if i + 8 < key_material.len() {
-            key_material[i + 8] ^= byte; // XOR with time bytes
-        }
-    }
-
-    Ok(key_material)
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&hash);
+    Ok(key)
 }
 
 /// Encrypt keystore data
