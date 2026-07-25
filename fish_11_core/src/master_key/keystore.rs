@@ -212,37 +212,10 @@ impl Keystore {
         let mut key_metadata = HashMap::new();
         if let Some(metadata_section) = ini.section(Some("KeyMetadata")) {
             for (key_id, metadata_str) in metadata_section.iter() {
-                // Parse metadata from string representation
-                // Format: "created_at:last_used:usage_count:message_count:data_size_bytes:description:is_revoked"
-                let parts: Vec<&str> = metadata_str.split(':').collect();
-                if parts.len() >= 7 {
-                    if let (
-                        Ok(created_at),
-                        Ok(last_used),
-                        Ok(usage_count),
-                        Ok(message_count),
-                        Ok(data_size_bytes),
-                        Ok(is_revoked),
-                    ) = (
-                        parts[0].parse::<u64>(),
-                        parts[1].parse::<u64>(),
-                        parts[2].parse::<u64>(),
-                        parts[3].parse::<u64>(),
-                        parts[4].parse::<u64>(),
-                        parts[6].parse::<bool>(),
-                    ) {
-                        let description = parts[5..].join(":"); // Join remaining parts for description
-                        let metadata = KeyMetadata {
-                            created_at,
-                            last_used,
-                            usage_count,
-                            message_count,
-                            data_size_bytes,
-                            description,
-                            is_revoked,
-                        };
-                        key_metadata.insert(key_id.to_string(), metadata);
-                    }
+                if let Ok(metadata) = serde_json::from_str::<KeyMetadata>(metadata_str) {
+                    key_metadata.insert(key_id.to_string(), metadata);
+                } else if let Some(metadata) = Self::parse_legacy_metadata(metadata_str) {
+                    key_metadata.insert(key_id.to_string(), metadata);
                 }
             }
         }
@@ -286,16 +259,8 @@ impl Keystore {
 
         // Save key metadata
         for (key_id, metadata) in &self.key_metadata {
-            let metadata_str = format!(
-                "{}:{}:{}:{}:{}:{}:{}",
-                metadata.created_at,
-                metadata.last_used,
-                metadata.usage_count,
-                metadata.message_count,
-                metadata.data_size_bytes,
-                metadata.description,
-                metadata.is_revoked
-            );
+            let metadata_str = serde_json::to_string(metadata)
+                .map_err(|e| format!("Failed to serialize key metadata: {}", e))?;
             ini.with_section(Some("KeyMetadata")).set(key_id.as_str(), metadata_str.as_str());
         }
 
@@ -330,16 +295,8 @@ impl Keystore {
         }
 
         for (key_id, metadata) in &self.key_metadata {
-            let metadata_str = format!(
-                "{}:{}:{}:{}:{}:{}:{}",
-                metadata.created_at,
-                metadata.last_used,
-                metadata.usage_count,
-                metadata.message_count,
-                metadata.data_size_bytes,
-                metadata.description,
-                metadata.is_revoked
-            );
+            let metadata_str = serde_json::to_string(metadata)
+                .map_err(|e| format!("Failed to serialize key metadata: {}", e))?;
             ini.with_section(Some("KeyMetadata")).set(key_id.as_str(), metadata_str.as_str());
         }
 
@@ -372,34 +329,10 @@ impl Keystore {
         let mut key_metadata = HashMap::new();
         if let Some(section) = ini.section(Some("KeyMetadata")) {
             for (key_id, metadata_str) in section.iter() {
-                let parts: Vec<&str> = metadata_str.split(':').collect();
-                if parts.len() >= 7 {
-                    if let (
-                        Ok(created_at),
-                        Ok(last_used),
-                        Ok(usage_count),
-                        Ok(message_count),
-                        Ok(data_size_bytes),
-                        Ok(is_revoked),
-                    ) = (
-                        parts[0].parse::<u64>(),
-                        parts[1].parse::<u64>(),
-                        parts[2].parse::<u64>(),
-                        parts[3].parse::<u64>(),
-                        parts[4].parse::<u64>(),
-                        parts[6].parse::<bool>(),
-                    ) {
-                        let description = parts[5..].join(":");
-                        key_metadata.insert(key_id.to_string(), KeyMetadata {
-                            created_at,
-                            last_used,
-                            usage_count,
-                            message_count,
-                            data_size_bytes,
-                            description,
-                            is_revoked,
-                        });
-                    }
+                if let Ok(metadata) = serde_json::from_str::<KeyMetadata>(metadata_str) {
+                    key_metadata.insert(key_id.to_string(), metadata);
+                } else if let Some(metadata) = Self::parse_legacy_metadata(metadata_str) {
+                    key_metadata.insert(key_id.to_string(), metadata);
                 }
             }
         }
@@ -410,6 +343,29 @@ impl Keystore {
             nonce_counters,
             key_metadata,
             file_path: None,
+        })
+    }
+
+    fn parse_legacy_metadata(s: &str) -> Option<KeyMetadata> {
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() < 7 {
+            return None;
+        }
+        let created_at = parts[0].parse::<u64>().ok()?;
+        let last_used = parts[1].parse::<u64>().ok()?;
+        let usage_count = parts[2].parse::<u64>().ok()?;
+        let message_count = parts[3].parse::<u64>().ok()?;
+        let data_size_bytes = parts[4].parse::<u64>().ok()?;
+        let is_revoked = parts[6].parse::<bool>().ok()?;
+        let description = parts[5..].join(":");
+        Some(KeyMetadata {
+            created_at,
+            last_used,
+            usage_count,
+            message_count,
+            data_size_bytes,
+            description,
+            is_revoked,
         })
     }
 

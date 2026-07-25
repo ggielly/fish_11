@@ -148,36 +148,75 @@ pub struct EncryptionMetrics {
 }
 
 /// Main configuration struct
-#[derive(PartialEq, Debug, Clone)]
 pub struct FishConfig {
-    /// Legacy keys
     pub keys: HashMap<String, String>,
-    /// Network mapping for keys
     pub nick_networks: HashMap<String, String>,
-    /// Our private key
     pub our_private_key: Option<String>,
-    /// Our public key
     pub our_public_key: Option<String>,
-    /// Keypair creation time
     pub keypair_creation_time: Option<String>,
-    /// FiSH11 settings
     pub fish11: Fish11Section,
-    /// Startup data
     pub startup_data: StartupSection,
-    /// Entries for channels and users
     pub entries: HashMap<String, EntryData>,
-    /// Channel symmetric keys (raw bytes)
     pub channel_keys: HashMap<String, Vec<u8>>,
-    /// Channel ratchet states for Forward Secrecy
     pub channel_ratchet_states: HashMap<String, RatchetState>,
-    /// Channel nonce caches for anti-replay
     pub channel_nonce_caches: HashMap<String, NonceCache>,
-    /// Plaintext topics for channels
     pub topics: HashMap<String, String>,
-    /// Encryption metrics
     pub metrics: EncryptionMetrics,
-    /// Tracks if configuration has unsaved changes (not serialized)
-    dirty: std::cell::Cell<bool>,
+    dirty: std::sync::atomic::AtomicBool,
+}
+
+impl std::fmt::Debug for FishConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FishConfig")
+            .field("keys", &self.keys)
+            .field("nick_networks", &self.nick_networks)
+            .field("our_private_key", &self.our_private_key)
+            .field("our_public_key", &self.our_public_key)
+            .field("fish11", &self.fish11)
+            .field("startup_data", &self.startup_data)
+            .field("entries", &self.entries)
+            .field("metrics", &self.metrics)
+            .finish()
+    }
+}
+
+impl Clone for FishConfig {
+    fn clone(&self) -> Self {
+        Self {
+            keys: self.keys.clone(),
+            nick_networks: self.nick_networks.clone(),
+            our_private_key: self.our_private_key.clone(),
+            our_public_key: self.our_public_key.clone(),
+            keypair_creation_time: self.keypair_creation_time.clone(),
+            fish11: self.fish11.clone(),
+            startup_data: self.startup_data.clone(),
+            entries: self.entries.clone(),
+            channel_keys: self.channel_keys.clone(),
+            channel_ratchet_states: self.channel_ratchet_states.clone(),
+            channel_nonce_caches: self.channel_nonce_caches.clone(),
+            topics: self.topics.clone(),
+            metrics: self.metrics.clone(),
+            dirty: std::sync::atomic::AtomicBool::new(self.is_dirty()),
+        }
+    }
+}
+
+impl PartialEq for FishConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.keys == other.keys
+            && self.nick_networks == other.nick_networks
+            && self.our_private_key == other.our_private_key
+            && self.our_public_key == other.our_public_key
+            && self.keypair_creation_time == other.keypair_creation_time
+            && self.fish11 == other.fish11
+            && self.startup_data == other.startup_data
+            && self.entries == other.entries
+            && self.channel_keys == other.channel_keys
+            && self.channel_ratchet_states == other.channel_ratchet_states
+            && self.channel_nonce_caches == other.channel_nonce_caches
+            && self.topics == other.topics
+            && self.metrics == other.metrics
+    }
 }
 
 impl FishConfig {
@@ -200,23 +239,21 @@ impl FishConfig {
             channel_nonce_caches: HashMap::new(),
             topics: HashMap::new(),
             metrics: EncryptionMetrics::default(),
-            dirty: std::cell::Cell::new(false),
+            dirty: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
     /// Mark the configuration as dirty (needs saving)
     pub fn mark_dirty(&self) {
-        self.dirty.set(true);
+        self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Check if the configuration has unsaved changes
     pub fn is_dirty(&self) -> bool {
-        self.dirty.get()
+        self.dirty.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Mark the configuration as clean (just saved)
     pub fn mark_clean(&self) {
-        self.dirty.set(false);
+        self.dirty.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Get an entry from the configuration (convenience method)

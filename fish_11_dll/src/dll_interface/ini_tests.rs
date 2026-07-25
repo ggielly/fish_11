@@ -11,7 +11,7 @@ mod tests {
 
     // Helper to set up a clean config for each test
     fn setup_test_config() {
-        let mut config = config::CONFIG.lock();
+        let mut config = config::CONFIG.write();
         *config = config::FishConfig::new();
         config.fish11 = Fish11Section {
             nickname: "testnick".to_string(),

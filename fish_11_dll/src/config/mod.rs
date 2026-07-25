@@ -1,6 +1,6 @@
 //! Configuration module for FiSH_11
 
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 pub mod channel_key_utils;
 pub mod channel_keys;
 pub mod config_access;
@@ -53,7 +53,7 @@ pub use topics::{get_topic, list_topics, remove_topic, set_topic};
 
 /// Global configuration instance
 /// Using parking_lot::Mutex for better performance and no poisoning
-pub static CONFIG: Lazy<Mutex<FishConfig>> = Lazy::new(|| {
+pub static CONFIG: Lazy<RwLock<FishConfig>> = Lazy::new(|| {
     #[cfg(debug_assertions)]
     log::info!("CONFIG: Initializing global configuration...");
 
@@ -67,14 +67,14 @@ pub static CONFIG: Lazy<Mutex<FishConfig>> = Lazy::new(|| {
                 Ok(config) => {
                     #[cfg(debug_assertions)]
                     log::info!("CONFIG: configuration loaded successfully from {}", path.display());
-                    Mutex::new(config)
+                    RwLock::new(config)
                 }
                 Err(e) => {
                     #[cfg(debug_assertions)]
                     log::error!("CONFIG: failed to load config from {}: {}", path.display(), e);
 
                     log::warn!("CONFIG: using default configuration due to load error");
-                    Mutex::new(FishConfig::new())
+                    RwLock::new(FishConfig::new())
                 }
             }
         }
@@ -93,17 +93,17 @@ pub static CONFIG: Lazy<Mutex<FishConfig>> = Lazy::new(|| {
             log::info!("CONFIG: FishConfig created successfully");
 
             #[cfg(debug_assertions)]
-            log::info!("CONFIG: Creating Mutex wrapper...");
+            log::info!("CONFIG: Creating RwLock wrapper...");
 
-            let mutex = Mutex::new(new_config);
+            let lock = RwLock::new(new_config);
 
             #[cfg(debug_assertions)]
-            log::info!("CONFIG: Mutex created successfully");
+            log::info!("CONFIG: RwLock created successfully");
 
             #[cfg(debug_assertions)]
             log::info!("CONFIG: returning from Lazy::new...");
 
-            mutex
+            lock
         }
     }
 });

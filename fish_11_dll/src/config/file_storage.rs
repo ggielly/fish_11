@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use ini::Ini;
 use secrecy::ExposeSecret;
 
-use crate::config::models::FishConfig;
 use crate::config::ini_helpers;
+use crate::config::models::FishConfig;
 use crate::error::{FishError, Result};
 use crate::utils::base64_encode;
 use crate::{crypto, log_debug, log_error, log_info, log_trace, log_warn};
@@ -173,10 +173,7 @@ pub fn load_config(path_override: Option<PathBuf>) -> Result<FishConfig> {
 
     config = ini_helpers::ini_to_config(&ini);
 
-    log_warn!(
-        "load_config: entries loaded: {}",
-        config.entries.len()
-    );
+    log_warn!("load_config: entries loaded: {}", config.entries.len());
 
     log_warn!("=== load_config: TOTAL {:?} ===", total_start.elapsed());
     Ok(config)

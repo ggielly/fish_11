@@ -12,7 +12,10 @@ pub fn parse_i64(value: &str) -> Option<i64> {
     value.parse().ok()
 }
 
-pub fn load_keypair(ini: &Ini, sections: &HashMap<String, String>) -> (Option<String>, Option<String>) {
+pub fn load_keypair(
+    ini: &Ini,
+    sections: &HashMap<String, String>,
+) -> (Option<String>, Option<String>) {
     let mut private = None;
     let mut public = None;
     if let Some(section) = sections.get("keypair") {
@@ -35,7 +38,10 @@ pub fn save_keypair(ini: &mut Ini, private: &Option<String>, public: &Option<Str
     }
 }
 
-pub fn load_nick_networks(ini: &Ini, sections: &HashMap<String, String>) -> HashMap<String, String> {
+pub fn load_nick_networks(
+    ini: &Ini,
+    sections: &HashMap<String, String>,
+) -> HashMap<String, String> {
     let mut map = HashMap::new();
     if let Some(section) = sections.get("nicknetworks") {
         if let Some(s) = ini.section(Some(section.as_str())) {
@@ -146,8 +152,7 @@ pub fn load_entries(ini: &Ini, sections: &HashMap<String, String>) -> HashMap<St
         if let Some(keys_data) = ini.section(Some(keys_name.as_str())) {
             let dates_data = dates_section.and_then(|n| ini.section(Some(n.as_str())));
             for (entry_key, key_val) in keys_data.iter() {
-                let date_val = dates_data
-                    .and_then(|d| d.get(entry_key).map(|s| s.to_string()));
+                let date_val = dates_data.and_then(|d| d.get(entry_key).map(|s| s.to_string()));
                 entries.insert(
                     entry_key.to_string(),
                     EntryData {
@@ -176,9 +181,7 @@ pub fn save_entries(ini: &mut Ini, entries: &HashMap<String, EntryData>) {
 }
 
 pub fn build_section_cache(ini: &Ini) -> HashMap<String, String> {
-    ini.sections()
-        .filter_map(|s| s.map(|s| (s.to_lowercase(), s.to_string())))
-        .collect()
+    ini.sections().filter_map(|s| s.map(|s| (s.to_lowercase(), s.to_string()))).collect()
 }
 
 pub fn config_to_ini(config: &FishConfig) -> Ini {

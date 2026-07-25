@@ -169,7 +169,7 @@ dll_function_identifier!(FiSH11_ExchangeKey, data, {
 
         // Take a snapshot of the config and release the lock immediately
         let config_snapshot = {
-            let config_guard = CONFIG.lock();
+            let config_guard = CONFIG.write();
             config_guard.clone()
         }; // Lock released here
 
@@ -528,7 +528,7 @@ mod tests {
     #[test]
     fn test_get_or_generate_keypair_creates_new() {
         // Clear any existing keypair
-        let mut config = CONFIG.lock();
+        let mut config = CONFIG.write();
         config.our_public_key = None;
         config.our_private_key = None;
         drop(config);
@@ -736,7 +736,7 @@ mod tests {
     #[test]
     fn test_get_or_generate_keypair_creates_and_persists_keypair() {
         // Clear any existing keypair
-        let mut config = CONFIG.lock();
+        let mut config = CONFIG.write();
         config.our_public_key = None;
         config.our_private_key = None;
         drop(config);
