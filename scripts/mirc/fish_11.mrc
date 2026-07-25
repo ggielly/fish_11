@@ -2,7 +2,7 @@
 ;* FiSH_11 mIRC Script *
 ;***********************
 ; "FiSH_11" - Secure IRC encryption script for mIRC
-; Written by GuY, 2025. Licensed under GPL-v3.
+; Written by GuY, 2025-26. Licensed under GPL-v3.
 ;
 ; SECURITY NOTICE: The security of this script depends entirely on the
 ; binary DLL files (fish_11.dll, fish_11_inject.dll). This mIRC script
@@ -15,8 +15,8 @@ on *:START: {
 }
 
 alias fish11_startup {
-  echo 4 -a *** FiSH_11 SECURITY NOTICE *** This script relies on 2 external DLL files. Only use trusted, signed versions from official sources.  ***
-  echo 4 -a *** FiSH_11 SECURITY NOTICE *** Never run this script if you suspect your system has been compromised.                                ***
+  echo 4 -a *** FiSH_11 SECURITY NOTiCE *** This script relies on 2 external DLL files. Only use trusted, signed versions from official sources.  ***
+  echo 4 -a *** FiSH_11 SECURITY NOTiCE *** Never run this script if you suspect your system has been compromised.                                ***
 
   var %exe_dir = $nofile($mircexe)
 
@@ -88,13 +88,13 @@ alias fish11_startup {
     if (%build_type == DEBUG) {
       echo 4 -ts $chr(3)4 *** WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING ***
       echo 4 -ts $chr(3)4 *** 
-      echo 4 -ts $chr(3)4 *** SECURITY WARNING : you're running a DEBUG version which logs EVERYTHING (keys, private messages, etc.) ON YOUR DISK.
-      echo 4 -ts $chr(3)4 *** DO NOT USE THIS VERSION IN REAL LIFE.
+      echo 4 -ts $chr(3)4 *** SECURITY WARNiNG : you're running a DEBUG version which logs EVERYTHING (keys, private messages, etc.) ON YOUR DISK.
+      echo 4 -ts $chr(3)4 *** DO NOT USE THiS VERSION IN REAL LiFE.
       echo 4 -ts $chr(3)4 *** 
       echo 4 -ts $chr(3)4 *** WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING ***
     }
     else {
-      echo 4 -ts $chr(3)3 *** You are running a RELEASE version. Sensitive data is NOT logged.
+      echo 4 -ts $chr(3)3 *** w00t, you are running a RELEASE version. Sensitive data is NOT logged.
     }
   }
   else {
@@ -1990,10 +1990,12 @@ alias fish11_UpdateStatusIndicator {
   if ($len(%key) > 1) {
     var %colored_fp = $fish11_GetColoredFingerprint(%active)
     
-    if (!$window(@FiSH_Status)) { window -hn @FiSH_Status }
-    aline -p @FiSH_Status * $timestamp $+ %active is encrypted (Key: %colored_fp $+ )
-    
-    echo -at ** FiSH_11: %active [Fingerprint: %colored_fp $+ ]
+    if (%colored_fp != $null) {
+      if (!$window(@FiSH_Status)) { window -hn @FiSH_Status }
+      aline -p @FiSH_Status * $timestamp $+ %active is encrypted (Key: %colored_fp $+ )
+      
+      echo -at ** FiSH_11: %active [Fingerprint: %colored_fp $+ ]
+    }
   }
   else {
     if (!$window(@FiSH_Status)) { window -hn @FiSH_Status }
