@@ -12,8 +12,10 @@ dll_function_identifier!(FiSH11_GetConfigPath, _data, {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::CStr;
+    use std::ptr;
+
     use super::*;
-    use crate::dll_interface::{CStr, ptr};
 
     #[test]
     fn test_fish11_getconfigpath_normal() {

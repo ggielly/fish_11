@@ -104,7 +104,7 @@ pub fn get_config_path() -> Result<PathBuf> {
 pub fn load_config(path_override: Option<PathBuf>) -> Result<FishConfig> {
     let total_start = std::time::Instant::now();
 
-    log_warn!("=== load_config: starting configuration load ===");
+    log_debug!("=== load_config: starting configuration load ===");
 
     let start_time = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(5);
@@ -120,7 +120,7 @@ pub fn load_config(path_override: Option<PathBuf>) -> Result<FishConfig> {
         }
         None => get_config_path()?,
     };
-    log_warn!("load_config: get_config_path took {:?}", path_start.elapsed());
+    log_debug!("load_config: get_config_path took {:?}", path_start.elapsed());
 
     #[cfg(debug_assertions)]
     log_debug!("load_config: config path: {}", config_path.display());
@@ -141,7 +141,7 @@ pub fn load_config(path_override: Option<PathBuf>) -> Result<FishConfig> {
 
         save_config(&config, None)?;
 
-        log_warn!("load_config: TOTAL (new file) {:?}", total_start.elapsed());
+        log_debug!("load_config: TOTAL (new file) {:?}", total_start.elapsed());
         return Ok(config);
     }
 
@@ -163,7 +163,7 @@ pub fn load_config(path_override: Option<PathBuf>) -> Result<FishConfig> {
         ))
     })?;
 
-    log_warn!("load_config: ini.load() took {:?}", ini_start.elapsed());
+    log_debug!("load_config: ini.load() took {:?}", ini_start.elapsed());
 
     if start_time.elapsed() > timeout {
         return Err(FishError::ConfigError(
@@ -173,9 +173,9 @@ pub fn load_config(path_override: Option<PathBuf>) -> Result<FishConfig> {
 
     config = ini_helpers::ini_to_config(&ini);
 
-    log_warn!("load_config: entries loaded: {}", config.entries.len());
+    log_debug!("load_config: entries loaded: {}", config.entries.len());
 
-    log_warn!("=== load_config: TOTAL {:?} ===", total_start.elapsed());
+    log_debug!("=== load_config: TOTAL {:?} ===", total_start.elapsed());
     Ok(config)
 }
 
@@ -207,7 +207,7 @@ pub fn save_config(config: &FishConfig, path_override: Option<PathBuf>) -> Resul
     let entries_start = std::time::Instant::now();
     let entries_duration = entries_start.elapsed();
     if entries_duration.as_millis() > 100 {
-        log_warn!(
+        log_debug!(
             "save_config: entries processing took {:?} for {} entries",
             entries_duration,
             config.entries.len()
