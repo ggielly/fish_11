@@ -68,6 +68,8 @@ dll_function_identifier!(FiSH11_EncryptMsg, data, {
             #[cfg(debug_assertions)]
             log_debug!("Successfully encrypted message for channel {}", target);
 
+            config::increment_encryption_counter();
+
             // SECURITY: Clear the source buffer from memory
             crate::utils::secure_clear_string(&mut input_str);
 
@@ -115,6 +117,8 @@ dll_function_identifier!(FiSH11_EncryptMsg, data, {
     let result = format!("+FiSH {}", encrypted_base64);
 
     log_info!("Successfully encrypted message for {}", nickname);
+
+    config::increment_encryption_counter();
 
     // SECURITY: Clear the source buffer from memory
     crate::utils::secure_clear_string(&mut input_str);

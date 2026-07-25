@@ -173,6 +173,8 @@ dll_function_identifier!(FiSH11_DecryptMsg, data, {
                 #[cfg(debug_assertions)]
                 log_debug!("Successfully decrypted ratchet message for {}", target);
 
+                config::increment_decryption_counter();
+
                 // SECURITY: Clear the source buffer from memory
                 crate::utils::secure_clear_string(&mut input_str);
 
@@ -219,6 +221,8 @@ dll_function_identifier!(FiSH11_DecryptMsg, data, {
     // Log decrypted content if DEBUG flag is enabled for sensitive content
     #[cfg(debug_assertions)]
     log_debug!("DLL_Interface: decrypted private message for '{}': '{}'", nickname, &decrypted);
+
+    config::increment_decryption_counter();
 
     //log_info!("Successfully decrypted message for {}", nickname);
 

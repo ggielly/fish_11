@@ -206,25 +206,19 @@ alias fish11_setkey_manual {
   }
 }
 
-alias fish11_setkey_utf8 { fish11_writekey raw_bytes $1 $2- }
-
-; Helper for setting keys
-alias fish11_writekey {
-  if ($2 == /query) var %cur_contact = $active
-    else var %cur_contact = $2
-  if ($3- == $null) return
-
-  ; Comprehensive network sanitization - remove all special characters
-  var %network = $regsubex($network, /[^\w\d]/g, _)
-
-  if ($dll(%Fish11DllFile, FiSH11_SetKey, $+(%network," ",%cur_contact," ",$3-))) {      
-    var %info = *** FiSH_11: key for %cur_contact set to *censored*
-
-    if ($window(%cur_contact) == $null) echo $color(Mode text) -at %info
-    else echo $color(Mode text) -tm %cur_contact %info
-    return $true
+alias fish11_setkey_utf8 {
+  if ($1 == $null || $2 == $null) {
+    echo 4 -a Syntax: /fish11_setkey_utf8 <nickname> <raw_key>
+    return
   }
-  return $false
+  var %network = $regsubex($network, /[^\w\d]/g, _)
+  var %result = $dll(%Fish11DllFile, FiSH11_SetKey, $+(%network, $chr(32), $1, $chr(32), $2-))
+  if (%result && $left(%result, 6) != Error:) {
+    echo $color(Mode text) -at *** FiSH_11: key for $1 set to *censored*
+  }
+  else {
+    echo $color(Error) -at *** FiSH_11: error setting key for $1 - $iif(%result, %result, Unknown error)
+  }
 }
 
 
@@ -954,7 +948,7 @@ on *:TEXT:*:?:{
   if (%decrypted != $1-) {
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
-    if (%show_decrypted == 1) {
+    if (%show_decrypted != 0) {
       echo $color(Message text) -dm $nick *** Decrypted: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
@@ -971,7 +965,7 @@ on *:TEXT:*:#:{
   if (%decrypted != $1-) {
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
-    if (%show_decrypted == 1) {
+    if (%show_decrypted != 0) {
       echo $color(Message text) -dm $chan *** Decrypted: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
@@ -988,7 +982,7 @@ on *:NOTICE:*:?:{
   if (%decrypted != $1-) {
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
-    if (%show_decrypted == 1) {
+    if (%show_decrypted != 0) {
       echo $color(Mode text) -dm $nick *** Decrypted notice: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
@@ -1005,7 +999,7 @@ on *:ACTION:*:?:{
   if (%decrypted != $1-) {
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
-    if (%show_decrypted == 1) {
+    if (%show_decrypted != 0) {
       echo $color(Action text) -dm $nick *** Decrypted action: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
@@ -1022,7 +1016,7 @@ on *:ACTION:*:#:{
   if (%decrypted != $1-) {
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
-    if (%show_decrypted == 1) {
+    if (%show_decrypted != 0) {
       echo $color(Action text) -dm $chan *** Decrypted action: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
@@ -1039,7 +1033,7 @@ on *:NOTICE:*:#:{
   if (%decrypted != $1-) {
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
-    if (%show_decrypted == 1) {
+    if (%show_decrypted != 0) {
       echo $color(Mode text) -dm $chan *** Decrypted notice: %decrypted
     }
     ; Let the inject DLL or normal processing handle the rest
@@ -1294,12 +1288,22 @@ alias fish11_show_channel_key_info {
 ; Remove channel key
 alias fish11_remove_channel_key {
   var %channel = $1
+  var %had_keys = 0
 
-  noop $dll(%Fish11DllFile, FiSH11_RemoveManualChannelKey, %channel)
-  noop $dll(%Fish11DllFile, FiSH11_RemoveRatchetChannelKey, %channel)
+  var %manual = $dll(%Fish11DllFile, FiSH11_RemoveManualChannelKey, %channel)
+  if (%manual && $left(%manual, 6) != Error:) { %had_keys = 1 }
+
+  var %ratchet = $dll(%Fish11DllFile, FiSH11_RemoveRatchetChannelKey, %channel)
+  if (%ratchet && $left(%ratchet, 6) != Error:) { %had_keys = 1 }
+
   fish11_SetChannelIniValue %channel encrypt_topic 0
 
-  echo $color(Mode text) -at *** FiSH_11: All encryption keys removed for %channel
+  if (%had_keys) {
+    echo $color(Mode text) -at *** FiSH_11: encryption keys removed for %channel
+  }
+  else {
+    echo $color(Mode text) -at *** FiSH_11: no encryption keys found for %channel
+  }
 }
 
 
@@ -1312,8 +1316,8 @@ alias fish11_remove_channel_key {
 
 alias fish11_check_masterkey {
   var %is_unlocked = $dll(%Fish11DllFile, FiSH11_MasterKeyIsUnlocked, $null)
-  
-  if (%is_unlocked != yes) {
+
+  if (%is_unlocked != 1) {
     echo $color(Mode text) -at *** FiSH_11: master key is locked. Configuration and logs are NOT encrypted.
     echo $color(Mode text) -at *** FiSH_11: use /fish11_unlock to unlock the master key.
   }
@@ -1371,7 +1375,7 @@ alias fish11_masterkey_status {
 alias fish11_require_masterkey {
   var %is_unlocked = $dll(%Fish11DllFile, FiSH11_MasterKeyIsUnlocked, $null)
   
-  while (%is_unlocked != yes) {
+  while (%is_unlocked != 1) {
     var %password = $input(Master key is locked. Enter password to unlock :, pvq, FiSH_11 Master Key Required, )
     
     if (%password == $null) {
@@ -2136,7 +2140,8 @@ alias fish11_debug {
 
   var %f1 = fishdebug
   var %f2 = $rand(0,9999)
-  noop $iif($isfile(%Fish11DllFile),$dll(%Fish11DllFile,FiSH11_SetKey,$+($network,%f1,%f2,HelloWorld)))
+  var %test_key = SGVsbG9Xb3JsZDEyMzQ1Njc4OTAxMjM0NTY=
+  noop $iif($isfile(%Fish11DllFile),$dll(%Fish11DllFile,FiSH11_SetKey,$+($network," ",%f1,%f2," ",%test_key)))
 
   if (!$window(%w)) {
     window -a %w -1 -1 550 300 Courier New 12
@@ -2253,22 +2258,6 @@ alias statusmsg {
 }
 
 
-; === INI HELPER FUNCTIONS (for compatibility with older scripts) ===
-alias INI_GetString {
-  var %config_path = $+($scriptdir,fish_11.ini)
-  var %value = $readini(%config_path, FiSH11, $1)
-  if (%value == $null) { return $2 }
-  return %value
-}
-
-alias INI_GetInt {
-  var %config_path = $+($scriptdir,fish_11.ini)
-  var %value = $readini(%config_path, FiSH11, $1)
-  if (%value == $null) { return $2 }
-  return %value
-}
-
-
 ; === TOPIC MANAGEMENT ===
 
 alias etopic {
@@ -2338,7 +2327,7 @@ alias gettopic {
   }
   else {
     var %error_msg = $iif(%result, %result, "Unknown error - could not get topic for %channel")
-    echo $color(Error) -at *** FiSH_11: error setting topic for %channel - %error_msg
+    echo $color(Error) -at *** FiSH_11: error getting topic for %channel - %error_msg
   }
 }
 
@@ -2362,7 +2351,7 @@ alias removetopic {
   }
   else {
     var %error_msg = $iif(%result, %result, "Unknown error - could not remove topic for %channel")
-    echo $color(Error) -at *** FiSH_11: error setting topic for %channel - %error_msg
+    echo $color(Error) -at *** FiSH_11: error removing topic for %channel - %error_msg
   }
 }
 

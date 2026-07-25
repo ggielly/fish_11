@@ -7,7 +7,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use crate::unified_error::{DllError, DllResult};
-use crate::{buffer_utils, config};
+use crate::{buffer_utils, config, dll_interface::get_buffer_size};
 
 /// DLL function to set a plaintext topic for a channel
 ///
@@ -74,7 +74,7 @@ pub extern "stdcall" fn FiSH11_SetTopic(data: *mut c_char) -> i32 {
             };
 
             unsafe {
-                buffer_utils::write_cstring_to_buffer(data, 900, &cstring).ok();
+                buffer_utils::write_cstring_to_buffer(data, get_buffer_size(), &cstring).ok();
             }
             1 // Return success code
         }
@@ -143,7 +143,7 @@ pub extern "stdcall" fn FiSH11_GetTopic(data: *mut c_char) -> i32 {
             };
 
             unsafe {
-                buffer_utils::write_cstring_to_buffer(data, 900, &cstring).ok();
+                buffer_utils::write_cstring_to_buffer(data, get_buffer_size(), &cstring).ok();
             }
             1 // Return success code
         }
@@ -214,7 +214,7 @@ pub extern "stdcall" fn FiSH11_RemoveTopic(data: *mut c_char) -> i32 {
             };
 
             unsafe {
-                buffer_utils::write_cstring_to_buffer(data, 900, &cstring).ok();
+                buffer_utils::write_cstring_to_buffer(data, get_buffer_size(), &cstring).ok();
             }
             1 // Return success code
         }

@@ -62,6 +62,10 @@ dll_function_identifier!(FiSH11_ProcessPublicKey, data, {
         DllError::KeyInvalid { reason: format!("invalid public key format: {}", e) }
     })?;
 
+    crypto::validate_public_key(&their_public_key).map_err(|e| {
+        DllError::KeyInvalid { reason: format!("public key rejected: {}", e) }
+    })?;
+
     #[cfg(debug_assertions)]
     log_debug!("Successfully extracted public key");
 

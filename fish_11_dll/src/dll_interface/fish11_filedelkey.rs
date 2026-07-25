@@ -11,9 +11,15 @@ dll_function_identifier!(FiSH11_FileDelKey, data, {
 
     let input_trimmed = input.trim();
 
-    // Normalize target to strip STATUSMSG prefixes (@#chan, +#chan, etc.)
-    let normalized_input = crate::utils::normalize_target(input_trimmed);
-    let nickname = normalize_nick(normalized_input);
+    let parts: Vec<&str> = input_trimmed.splitn(2, ' ').collect();
+    let (network, nickname_raw) = if parts.len() == 2 {
+        (parts[0], parts[1])
+    } else {
+        ("default", parts[0])
+    };
+
+    let normalized_target = crate::utils::normalize_target(nickname_raw);
+    let nickname = normalize_nick(normalized_target);
 
     if nickname.is_empty() {
         return Err(DllError::MissingParameter("nickname".to_string()));
@@ -21,13 +27,13 @@ dll_function_identifier!(FiSH11_FileDelKey, data, {
 
     #[cfg(debug_assertions)]
     log::info!(
-        "Key deletion requested for nickname/channel: {} (original: {})",
+        "Key deletion requested for nickname/channel: {} on network: {} (original: {})",
         nickname,
+        network,
         input_trimmed
     );
 
-    // The `?` operator handles any errors during deletion.
-    config::delete_key_default(&nickname)?;
+    config::delete_key(&nickname, Some(network))?;
 
     let message = format!("Key deleted for {}", nickname);
 
