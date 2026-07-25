@@ -12,6 +12,7 @@ pub mod key_management;
 pub mod manual_channel_keys;
 pub mod models;
 pub mod networks;
+pub mod timestamp_signing;
 pub use networks::{
     count_network_mappings, count_unique_networks, delete_network, get_all_network_mappings,
     get_all_networks, get_network_for_nick, get_nicknames_by_network, has_network, merge_networks,
@@ -164,9 +165,15 @@ where
     Err(format!("Operation failed after {} attempts", attempts))
 }
 
-/// Get the mIRC directory path
+/// Get the configuration directory path.
+///
+/// Resolution order:
+/// 1. `MIRCDIR` environment variable (if set and exists)
+/// 2. Platform-specific default:
+///    - Windows: `%APPDATA%/mIRC` (mIRC convention)
+///    - Linux/FreeBSD/macOS: `$XDG_CONFIG_HOME/fish_11` or `~/.config/fish_11`
 pub fn get_mirc_directory() -> Result<std::path::PathBuf, String> {
-    // Try to get from environment variable first
+    // Try environment variable first
     if let Ok(mirc_dir) = std::env::var("MIRCDIR") {
         let path = std::path::PathBuf::from(mirc_dir);
         if path.exists() {
@@ -174,14 +181,26 @@ pub fn get_mirc_directory() -> Result<std::path::PathBuf, String> {
         }
     }
 
-    // Fallback to default location
+    // Platform-specific default
+    #[cfg(windows)]
     let mut path = dirs::config_dir().ok_or("Could not determine config directory")?;
+    #[cfg(windows)]
     path.push("mIRC");
+
+    #[cfg(not(windows))]
+    let path = {
+        // Respect XDG_CONFIG_HOME on Linux/FreeBSD/macOS
+        let config_base = std::env::var("XDG_CONFIG_HOME")
+            .ok()
+            .map(std::path::PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".config")));
+        config_base.ok_or("Could not determine config directory")?.join("fish_11")
+    };
 
     // Create directory if it doesn't exist
     if !path.exists() {
         if let Err(e) = std::fs::create_dir_all(&path) {
-            return Err(format!("Failed to create mIRC directory: {}", e));
+            return Err(format!("Failed to create config directory: {}", e));
         }
     }
 

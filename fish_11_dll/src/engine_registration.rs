@@ -395,16 +395,16 @@ fn attempt_encryption(line: &str, network_name: Option<&str>) -> Option<String> 
                 // Extract the nonce from the encrypted payload to derive the next key.
                 let encrypted_bytes = crate::utils::base64_decode(&encrypted_b64)
                     .map_err(crate::unified_error::DllError::from)?;
-                if encrypted_bytes.len() < 12 {
+                if encrypted_bytes.len() < 24 {
                     return Err(crate::unified_error::DllError::EncryptionFailed {
                         context: "payload validation".to_string(),
                         cause: "Encrypted payload too short to contain a nonce".to_string(),
                     });
                 }
-                let nonce: [u8; 12] = encrypted_bytes[..12].try_into().map_err(|_| {
+                let nonce: [u8; 24] = encrypted_bytes[..24].try_into().map_err(|_| {
                     crate::unified_error::DllError::EncryptionFailed {
                         context: "nonce extraction".to_string(),
-                        cause: "Could not convert slice to 12-byte nonce array".to_string(),
+                        cause: "Could not convert slice to 24-byte nonce array".to_string(),
                     }
                 })?;
 

@@ -54,7 +54,7 @@ mod tests {
     use std::ptr;
 
     use super::*;
-    use crate::dll_interface::MIRC_COMMAND;
+    use crate::dll_interface::MIRC_IDENTIFIER;
 
     fn call_listkeys(buffer_size: usize) -> (c_int, String) {
         let mut buffer = vec![0i8; buffer_size];
@@ -81,7 +81,8 @@ mod tests {
     fn test_listkeys_normal() {
         // Suppose there are keys in config
         let (code, msg) = call_listkeys(512);
-        assert_eq!(code, MIRC_COMMAND);
+        // dll_function_identifier! returns MIRC_IDENTIFIER (3) on success
+        assert_eq!(code, crate::dll_interface::MIRC_IDENTIFIER);
         // Structured check: message should mention FiSH Keys
         assert!(msg.contains("FiSH Keys"));
     }
@@ -90,7 +91,8 @@ mod tests {
     fn test_listkeys_no_keys() {
         // Suppose config is empty
         let (code, msg) = call_listkeys(256);
-        assert_eq!(code, MIRC_COMMAND);
+        // dll_function_identifier! returns MIRC_IDENTIFIER (3) on success
+        assert_eq!(code, crate::dll_interface::MIRC_IDENTIFIER);
         // Structured check: message should either indicate no keys, or show the keys list.
         // The global config used in tests may already contain keys on disk, so accept both forms.
         let lower = msg.to_lowercase();

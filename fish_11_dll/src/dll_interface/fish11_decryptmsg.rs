@@ -88,16 +88,16 @@ dll_function_identifier!(FiSH11_DecryptMsg, data, {
         } else {
             // Use the ratchet-based decryption (FCEP-1 with forward secrecy)
             let encrypted_bytes = crate::utils::base64_decode(encrypted_message)?;
-            if encrypted_bytes.len() < 12 {
+            if encrypted_bytes.len() < 24 {
                 return Err(DllError::DecryptionFailed {
                     context: "payload validation".to_string(),
                     cause: "Encrypted payload too short to contain a nonce".to_string(),
                 });
             }
-            let nonce: [u8; 12] =
-                encrypted_bytes[..12].try_into().map_err(|_| DllError::DecryptionFailed {
+            let nonce: [u8; 24] =
+                encrypted_bytes[..24].try_into().map_err(|_| DllError::DecryptionFailed {
                     context: "nonce extraction".to_string(),
-                    cause: "Could not convert slice to 12-byte nonce array".to_string(),
+                    cause: "Could not convert slice to 24-byte nonce array".to_string(),
                 })?;
 
             // Anti-replay check using per-channel nonce cache (RFC FCEP-1 §6.3)

@@ -5,7 +5,7 @@ use std::time::Duration as StdDuration;
 use base64::Engine as _;
 use base64::engine::general_purpose;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
-use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
+use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use fish_11_core::globals::MAX_MESSAGE_SIZE;
 use hkdf::Hkdf;
 use lru_time_cache::LruCache;
@@ -15,8 +15,10 @@ use crate::crypto::MessageCipher;
 use crate::error::{FishError, Result};
 use crate::utils::{base64_decode, base64_encode, generate_random_bytes};
 
-const MAX_CIPHERTEXT_SIZE: usize = MAX_MESSAGE_SIZE + 16 + 12; // message + auth tag + nonce
-const NONCE_SIZE_BYTES: usize = 12; // ChaCha20-Poly1305 standard nonce size (96 bits)
+/// XChaCha20-Poly1305 nonce size: 192 bits (24 bytes)
+/// This eliminates nonce collision risk entirely — no practical limit on messages per key.
+const MAX_CIPHERTEXT_SIZE: usize = MAX_MESSAGE_SIZE + 16 + 24; // message + auth tag + nonce
+pub const NONCE_SIZE_BYTES: usize = 24; // XChaCha20-Poly1305 nonce size (192 bits)
 
 pub struct ChaCha20Poly1305Cipher;
 
@@ -56,7 +58,7 @@ impl MessageCipher for ChaCha20Poly1305Cipher {
     }
 }
 
-// Global nonce cache for anti-replay protection
+// Global nonce cache for anti-replay protection (24-byte XChaCha20 nonces)
 lazy_static::lazy_static! {
     static ref NONCE_CACHE: Mutex<LruCache<[u8; NONCE_SIZE_BYTES], ()>> = Mutex::new(
         LruCache::with_expiry_duration_and_capacity(
@@ -105,7 +107,7 @@ pub fn mark_nonce_seen(nonce: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Generate a new 32-byte symmetric key for ChaCha20-Poly1305
+/// Generate a new 32-byte symmetric key for XChaCha20-Poly1305
 pub fn generate_symmetric_key() -> Result<[u8; 32]> {
     generate_random_bytes(32)
         .try_into()
@@ -130,17 +132,17 @@ pub fn encrypt_message(
         )));
     }
 
-    // Generate a secure nonce using fully random bytes (12 bytes)
+    // Generate a secure nonce using fully random bytes (24 bytes for XChaCha20)
+    // XChaCha20 uses HChaCha20 to derive a sub-key from the 24-byte nonce,
+    // eliminating nonce collision risk — no practical limit on messages per key.
     let nonce_bytes = generate_random_bytes(NONCE_SIZE_BYTES);
     let mut nonce_array = [0u8; NONCE_SIZE_BYTES];
-
     nonce_array.copy_from_slice(&nonce_bytes[..NONCE_SIZE_BYTES]);
-
-    let nonce = Nonce::from(nonce_array);
 
     // Create the cipher
     let chacha_key = Key::from(*key);
-    let cipher = ChaCha20Poly1305::new(&chacha_key);
+    let cipher = XChaCha20Poly1305::new(&chacha_key);
+    let nonce = XNonce::from(nonce_array);
 
     // Encrypt the message, including associated data if provided
     let ciphertext = match associated_data {
@@ -150,7 +152,7 @@ pub fn encrypt_message(
     .map_err(|e| FishError::CryptoError(format!("Encryption failed: {}", e)))?;
 
     // Concatenate the nonce and ciphertext
-    let mut result = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
+    let mut result = Vec::with_capacity(NONCE_SIZE_BYTES + ciphertext.len());
     result.extend_from_slice(&nonce_bytes);
     result.extend_from_slice(&ciphertext);
 
@@ -189,13 +191,12 @@ pub fn decrypt_message(
         return Err(FishError::CryptoError(format!("Ciphertext too large: {} bytes", data.len())));
     }
 
-    // Check if we have enough data for nonce (12 bytes) + at least some ciphertext
-    // NONCE_SIZE_BYTES is 12
+    // Check if we have enough data for nonce (24 bytes) + at least some ciphertext
     if data.len() <= NONCE_SIZE_BYTES {
         return Err(FishError::CryptoError("Encrypted data too short".to_string()));
     }
 
-    // Split into nonce and ciphertext : 12 bytes nonce
+    // Split into nonce and ciphertext : 24 bytes nonce for XChaCha20
     let nonce = &data[..NONCE_SIZE_BYTES];
 
     // The rest is ciphertext
@@ -203,12 +204,10 @@ pub fn decrypt_message(
 
     // Create cipher
     let chacha_key = Key::from(*key);
-    let cipher = ChaCha20Poly1305::new(&chacha_key);
+    let cipher = XChaCha20Poly1305::new(&chacha_key);
     let mut nonce_array = [0u8; NONCE_SIZE_BYTES];
-
     nonce_array.copy_from_slice(nonce);
-
-    let nonce = Nonce::from(nonce_array);
+    let nonce = XNonce::from(nonce_array);
 
     // Decrypt, including associated data if provided
     let plaintext = match associated_data {
@@ -264,27 +263,27 @@ pub fn advance_ratchet_key(
     Ok(next_key)
 }
 
-/// Wraps a channel key using a pre-shared symmetric key.
+/// Wraps a channel key using a pre-shared symmetric key (XChaCha20-Poly1305).
 pub fn wrap_key(channel_key: &[u8; 32], shared_key_with_member: &[u8; 32]) -> Result<String> {
     let nonce_bytes = generate_random_bytes(NONCE_SIZE_BYTES);
-    let mut nonce_array = [0u8; 12];
-    nonce_array.copy_from_slice(&nonce_bytes[..12]);
-    let nonce = Nonce::from(nonce_array);
+    let mut nonce_array = [0u8; NONCE_SIZE_BYTES];
+    nonce_array.copy_from_slice(&nonce_bytes[..NONCE_SIZE_BYTES]);
 
-    let cipher = ChaCha20Poly1305::new(shared_key_with_member.into());
+    let cipher = XChaCha20Poly1305::new(shared_key_with_member.into());
+    let nonce = XNonce::from(nonce_array);
 
     let ciphertext = cipher
         .encrypt(&nonce, channel_key.as_ref())
         .map_err(|e| FishError::CryptoError(format!("Key wrapping failed: {}", e)))?;
 
     let mut result = Vec::with_capacity(NONCE_SIZE_BYTES + ciphertext.len());
-    result.extend_from_slice(&nonce_array);
+    result.extend_from_slice(&nonce_bytes);
     result.extend_from_slice(&ciphertext);
 
     Ok(general_purpose::STANDARD.encode(&result))
 }
 
-/// Unwraps a channel key using a pre-shared symmetric key.
+/// Unwraps a channel key using a pre-shared symmetric key (XChaCha20-Poly1305).
 pub fn unwrap_key(
     wrapped_key_b64: &str,
     shared_key_with_coordinator: &[u8; 32],
@@ -293,20 +292,21 @@ pub fn unwrap_key(
         .decode(wrapped_key_b64)
         .map_err(|e| FishError::CryptoError(format!("Invalid base64 in wrapped key: {}", e)))?;
 
-    if wrapped_bytes.len() < 60 {
+    // Minimum size: 24 (nonce) + 16 (auth tag) + 32 (key) = 72 bytes
+    if wrapped_bytes.len() < 72 {
         return Err(FishError::CryptoError(format!(
-            "Wrapped key too short: expected at least 60 bytes, got {}",
+            "Wrapped key too short: expected at least 72 bytes, got {}",
             wrapped_bytes.len()
         )));
     }
 
     let (nonce_bytes, ciphertext) = wrapped_bytes.split_at(NONCE_SIZE_BYTES);
-    let nonce_array: [u8; 12] = nonce_bytes
+    let nonce_array: [u8; NONCE_SIZE_BYTES] = nonce_bytes
         .try_into()
         .map_err(|_| FishError::CryptoError("Invalid nonce length".to_string()))?;
-    let nonce = Nonce::from(nonce_array);
+    let nonce = XNonce::from(nonce_array);
 
-    let cipher = ChaCha20Poly1305::new(shared_key_with_coordinator.into());
+    let cipher = XChaCha20Poly1305::new(shared_key_with_coordinator.into());
 
     let plaintext = cipher.decrypt(&nonce, ciphertext).map_err(|e| {
         FishError::CryptoError(format!(
@@ -605,7 +605,7 @@ mod tests {
     fn test_ratchet_state_advancement_with_key_derivation() {
         let initial_key = [1u8; 32];
         let mut state = RatchetState::new(initial_key);
-        let nonce = [0u8; 12];
+        let nonce = [0u8; NONCE_SIZE_BYTES];
 
         let key1 = state.current_key;
         let next_key1 = advance_ratchet_key(&key1, &nonce, "#test").unwrap();
@@ -644,7 +644,7 @@ mod tests {
 
         // Generate a sequence of 3 keys
         let key1 = state.current_key;
-        let nonce1 = [1u8; 12];
+        let nonce1 = [1u8; NONCE_SIZE_BYTES];
         let next_key1_result = advance_ratchet_key(&key1, &nonce1, channel);
 
         if next_key1_result.is_err() {
@@ -655,7 +655,7 @@ mod tests {
         state.advance(next_key1);
 
         let key2 = state.current_key;
-        let nonce2 = [2u8; 12];
+        let nonce2 = [2u8; NONCE_SIZE_BYTES];
         let next_key2_result = advance_ratchet_key(&key2, &nonce2, channel);
 
         if next_key2_result.is_err() {

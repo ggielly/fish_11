@@ -117,7 +117,7 @@ impl RatchetState {
 /// Holds a cache of recently seen nonces to prevent replay attacks.
 #[derive(PartialEq, Debug, Clone)]
 pub struct NonceCache {
-    pub recent_nonces: VecDeque<[u8; 12]>,
+    pub recent_nonces: VecDeque<[u8; 24]>,
 }
 
 impl NonceCache {
@@ -125,7 +125,7 @@ impl NonceCache {
         Self { recent_nonces: VecDeque::with_capacity(MAX_NONCE_CACHE_SIZE) }
     }
 
-    pub fn check_and_add(&mut self, nonce: [u8; 12]) -> bool {
+    pub fn check_and_add(&mut self, nonce: [u8; 24]) -> bool {
         if self.recent_nonces.contains(&nonce) {
             return true; // Nonce is a duplicate
         }

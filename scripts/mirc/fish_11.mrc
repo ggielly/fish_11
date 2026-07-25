@@ -971,7 +971,7 @@ on ^*:TEXT:*:?:{
     if (%show_decrypted != 0) {
       ; Get encryption mark from config
       var %mark_pos = $fish11_GetIniIntValue(mark_position 1)
-      var %mark_enc = $fish11_GetIniValue(mark_encrypted)
+      var %mark_enc = $eval($fish11_GetIniValue(mark_encrypted), 1)
       if (%mark_enc == $null) { %mark_enc = $chr(183) }
 
       if (%mark_pos == 2) {
@@ -990,7 +990,7 @@ on ^*:TEXT:*:?:{
 
 
 ; === INCOMING CHANNEL MESSAGES ===
-on *:TEXT:*:#:{
+on ^*:TEXT:*:#:{
   ; Try to decrypt the message
   var %decrypted = $fish11_try_decrypt_channel($chan, $1-)
   
@@ -999,77 +999,126 @@ on *:TEXT:*:#:{
     ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Message text) -t $chan *** Decrypted: %decrypted
+      ; Get encryption mark from config
+      var %mark_pos = $fish11_GetIniIntValue(mark_position 1)
+      var %mark_enc = $eval($fish11_GetIniValue(mark_encrypted), 1)
+      if (%mark_enc == $null) { %mark_enc = $chr(183) }
+
+      if (%mark_pos == 2) {
+        ; Prefix mark
+        echo $color(Message text) -t $chan %mark_enc $+ < $+ $nick $+ > %decrypted
+      }
+      else {
+        ; Suffix mark (default)
+        echo $color(Message text) -t $chan < $+ $nick $+ > %decrypted $+ $chr(32) $+ %mark_enc
+      }
     }
-    ; Let the inject DLL or normal processing handle the rest
+    haltdef
+    halt
   }
 }
 
 
 ; === INCOMING PRIVATE NOTICES ===
-on *:NOTICE:*:?:{
+on ^*:NOTICE:*:?:{
   ; Try to decrypt the message
   var %decrypted = $fish11_try_decrypt_incoming($nick, $1-)
   
   ; If decryption changed the message, display it and halt
   if (%decrypted != $1-) {
-    ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Mode text) -t $nick *** Decrypted notice: %decrypted
+      var %mark_pos = $fish11_GetIniIntValue(mark_position 1)
+      var %mark_enc = $eval($fish11_GetIniValue(mark_encrypted), 1)
+      if (%mark_enc == $null) { %mark_enc = $chr(183) }
+
+      if (%mark_pos == 2) {
+        echo $color(Mode text) -t $nick %mark_enc $+ - $+ $nick $+ - %decrypted
+      }
+      else {
+        echo $color(Mode text) -t $nick - $+ $nick $+ - %decrypted $+ $chr(32) $+ %mark_enc
+      }
     }
-    ; Let the inject DLL or normal processing handle the rest
+    haltdef
+    halt
   }
 }
 
 
 ; === INCOMING PRIVATE ACTIONS ===
-on *:ACTION:*:?:{
+on ^*:ACTION:*:?:{
   ; Try to decrypt the message
   var %decrypted = $fish11_try_decrypt_incoming($nick, $1-)
   
   ; If decryption changed the message, display it and halt
   if (%decrypted != $1-) {
-    ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Action text) -t $nick *** Decrypted action: %decrypted
+      var %mark_pos = $fish11_GetIniIntValue(mark_position 1)
+      var %mark_enc = $eval($fish11_GetIniValue(mark_encrypted), 1)
+      if (%mark_enc == $null) { %mark_enc = $chr(183) }
+
+      if (%mark_pos == 2) {
+        echo $color(Action text) -t $nick * %mark_enc $+ $nick %decrypted
+      }
+      else {
+        echo $color(Action text) -t $nick * $nick %decrypted $+ $chr(32) $+ %mark_enc
+      }
     }
-    ; Let the inject DLL or normal processing handle the rest
+    haltdef
+    halt
   }
 }
 
 
 ; === INCOMING CHANNEL ACTIONS ===
-on *:ACTION:*:#:{
+on ^*:ACTION:*:#:{
   ; Try to decrypt the message
   var %decrypted = $fish11_try_decrypt_channel($chan, $1-)
   
   ; If decryption changed the message, display it and halt
   if (%decrypted != $1-) {
-    ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Action text) -t $chan *** Decrypted action: %decrypted
+      var %mark_pos = $fish11_GetIniIntValue(mark_position 1)
+      var %mark_enc = $eval($fish11_GetIniValue(mark_encrypted), 1)
+      if (%mark_enc == $null) { %mark_enc = $chr(183) }
+
+      if (%mark_pos == 2) {
+        echo $color(Action text) -t $chan * %mark_enc $+ $nick %decrypted
+      }
+      else {
+        echo $color(Action text) -t $chan * $nick %decrypted $+ $chr(32) $+ %mark_enc
+      }
     }
-    ; Let the inject DLL or normal processing handle the rest
+    haltdef
+    halt
   }
 }
 
 
 ; === INCOMING CHANNEL NOTICES ===
-on *:NOTICE:*:#:{
+on ^*:NOTICE:*:#:{
   ; Try to decrypt the message
   var %decrypted = $fish11_try_decrypt_channel($chan, $1-)
   
   ; If decryption changed the message, display it and halt
   if (%decrypted != $1-) {
-    ; Check if we should display the decrypted message
     var %show_decrypted = $dll(%Fish11DllFile, INI_GetBool, show_decrypted_messages 1)
     if (%show_decrypted != 0) {
-      echo $color(Mode text) -t $chan *** Decrypted notice: %decrypted
+      var %mark_pos = $fish11_GetIniIntValue(mark_position 1)
+      var %mark_enc = $eval($fish11_GetIniValue(mark_encrypted), 1)
+      if (%mark_enc == $null) { %mark_enc = $chr(183) }
+
+      if (%mark_pos == 2) {
+        echo $color(Mode text) -t $chan %mark_enc $+ - $+ $chan $+ - %decrypted
+      }
+      else {
+        echo $color(Mode text) -t $chan - $+ $chan $+ - %decrypted $+ $chr(32) $+ %mark_enc
+      }
     }
-    ; Let the inject DLL or normal processing handle the rest
+    haltdef
+    halt
   }
 }
 

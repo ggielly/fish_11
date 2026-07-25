@@ -32,6 +32,7 @@ rust-ini = "0.21.3"
 subtle = "2.5"
 secrecy = "0.8"         # Can't bump to 0.10.0 because of a breaking change
 hkdf = "0.12"
+hmac = "0.12"
 lru_time_cache = "0.11"
 zeroize = "1.6"
 libc = "0.2.177"
@@ -49,6 +50,7 @@ cbc = { version = "0.1", features = ["std"] }
 cipher = "0.4"
 num-bigint = { version = "0.4", features = ["rand"] }
 num-traits = "0.2"
+aes-keywrap = "0.9"
 
 # Shared core library
 fish_11_core = { path = "../fish_11_core" }
