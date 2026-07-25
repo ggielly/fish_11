@@ -7,13 +7,17 @@
 mod integration_tests {
     use super::*;
     use crate::crypto::{blowfish, dh1080};
-    //use crate::legacy::config::LEGACY_CONFIG;
     use crate::legacy::fish10_config::get_encrypt_topic_setting;
     use crate::legacy::fish10_config::set_encrypt_topic_setting;
-    //use crate::legacy::get_legacy_key;
     use crate::legacy::fish10_key_management;
     use crate::legacy::fish10_key_management::store_legacy_key;
     use crate::legacy::fish10_message_detection;
+
+    /// Teardown: clear all legacy keys and DH1080 keys to prevent cross-test contamination
+    fn teardown_legacy_state() {
+        crate::legacy::test_utils::clear_test_legacy_keys();
+        crate::legacy::test_utils::clear_test_dh1080_keys();
+    }
 
     #[test]
     fn test_complete_dh1080_key_exchange_workflow() {
@@ -86,6 +90,7 @@ mod integration_tests {
 
     #[test]
     fn test_legacy_key_storage_and_retrieval() {
+        teardown_legacy_state();
         // Test storing and retrieving a legacy key
         let target = "test_user";
         let key = "test_shared_secret_key_12345";
@@ -97,13 +102,14 @@ mod integration_tests {
         let retrieved_key = fish10_key_management::get_legacy_key(target).unwrap();
         assert_eq!(key.as_bytes(), retrieved_key);
 
-        // Test that a non-existent key returns an empty vector
-        let non_existent_key = fish10_key_management::get_legacy_key("non_existent_user").unwrap();
-        assert!(non_existent_key.is_empty());
+        // Test that a non-existent key returns None
+        let non_existent_key = fish10_key_management::get_legacy_key("non_existent_user");
+        assert!(non_existent_key.is_none() || non_existent_key.unwrap().is_empty());
     }
 
     #[test]
     fn test_legacy_encryption_with_stored_key() {
+        teardown_legacy_state();
         // Test the complete workflow with key storage
         let target = "test_user";
         let plaintext = "This is a test message for legacy encryption";
@@ -161,6 +167,7 @@ mod integration_tests {
 
     #[test]
     fn test_legacy_topic_encryption_workflow() {
+        teardown_legacy_state();
         // Test the complete topic encryption workflow
         let target = "#test_channel";
         let plaintext_topic = "This is a test topic for encryption";

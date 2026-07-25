@@ -6,14 +6,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Maximum number of previous ratchet keys to retain.
 ///
 /// This window allows decryption of out-of-order messages while maintaining
-/// forward secrecy. A window of 2 keys provides tolerance for typical IRC
-/// network conditions (reordering, lag) while significantly improving security.
+/// forward secrecy. A window of 5 keys provides tolerance for typical IRC
+/// network conditions (reordering, multi-server routing, netsplits) while
+/// maintaining forward secrecy.
 ///
 /// Security trade-off: Larger window = better reliability but slower FS.
-/// Reduced from 5 to 2 keys to minimize the attack surface in case of memory compromise.
-/// This means only the 2 most recent previous keys are kept, limiting the exposure
-/// window while still handling most common out-of-order message scenarios.
-const MAX_PREVIOUS_KEYS: usize = 2;
+/// Set to 5 per RFC FCEP-1 Section 7.2 recommendation. This handles common
+/// IRC out-of-order scenarios (up to 5 messages displaced) while keeping
+/// the attack surface manageable — old keys are zeroized on eviction.
+const MAX_PREVIOUS_KEYS: usize = 5;
 
 /// Maximum number of nonces to cache per channel for replay detection.
 ///
@@ -116,7 +117,7 @@ impl RatchetState {
 /// Holds a cache of recently seen nonces to prevent replay attacks.
 #[derive(PartialEq, Debug, Clone)]
 pub struct NonceCache {
-    pub recent_nonces: VecDeque<[u8; 12]>,
+    pub recent_nonces: VecDeque<[u8; 24]>,
 }
 
 impl NonceCache {
@@ -124,7 +125,7 @@ impl NonceCache {
         Self { recent_nonces: VecDeque::with_capacity(MAX_NONCE_CACHE_SIZE) }
     }
 
-    pub fn check_and_add(&mut self, nonce: [u8; 12]) -> bool {
+    pub fn check_and_add(&mut self, nonce: [u8; 24]) -> bool {
         if self.recent_nonces.contains(&nonce) {
             return true; // Nonce is a duplicate
         }
@@ -148,36 +149,75 @@ pub struct EncryptionMetrics {
 }
 
 /// Main configuration struct
-#[derive(PartialEq, Debug, Clone)]
 pub struct FishConfig {
-    /// Legacy keys
     pub keys: HashMap<String, String>,
-    /// Network mapping for keys
     pub nick_networks: HashMap<String, String>,
-    /// Our private key
     pub our_private_key: Option<String>,
-    /// Our public key
     pub our_public_key: Option<String>,
-    /// Keypair creation time
     pub keypair_creation_time: Option<String>,
-    /// FiSH11 settings
     pub fish11: Fish11Section,
-    /// Startup data
     pub startup_data: StartupSection,
-    /// Entries for channels and users
     pub entries: HashMap<String, EntryData>,
-    /// Channel symmetric keys (raw bytes)
     pub channel_keys: HashMap<String, Vec<u8>>,
-    /// Channel ratchet states for Forward Secrecy
     pub channel_ratchet_states: HashMap<String, RatchetState>,
-    /// Channel nonce caches for anti-replay
     pub channel_nonce_caches: HashMap<String, NonceCache>,
-    /// Plaintext topics for channels
     pub topics: HashMap<String, String>,
-    /// Encryption metrics
     pub metrics: EncryptionMetrics,
-    /// Tracks if configuration has unsaved changes (not serialized)
-    dirty: std::cell::Cell<bool>,
+    dirty: std::sync::atomic::AtomicBool,
+}
+
+impl std::fmt::Debug for FishConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FishConfig")
+            .field("keys", &self.keys)
+            .field("nick_networks", &self.nick_networks)
+            .field("our_private_key", &self.our_private_key)
+            .field("our_public_key", &self.our_public_key)
+            .field("fish11", &self.fish11)
+            .field("startup_data", &self.startup_data)
+            .field("entries", &self.entries)
+            .field("metrics", &self.metrics)
+            .finish()
+    }
+}
+
+impl Clone for FishConfig {
+    fn clone(&self) -> Self {
+        Self {
+            keys: self.keys.clone(),
+            nick_networks: self.nick_networks.clone(),
+            our_private_key: self.our_private_key.clone(),
+            our_public_key: self.our_public_key.clone(),
+            keypair_creation_time: self.keypair_creation_time.clone(),
+            fish11: self.fish11.clone(),
+            startup_data: self.startup_data.clone(),
+            entries: self.entries.clone(),
+            channel_keys: self.channel_keys.clone(),
+            channel_ratchet_states: self.channel_ratchet_states.clone(),
+            channel_nonce_caches: self.channel_nonce_caches.clone(),
+            topics: self.topics.clone(),
+            metrics: self.metrics.clone(),
+            dirty: std::sync::atomic::AtomicBool::new(self.is_dirty()),
+        }
+    }
+}
+
+impl PartialEq for FishConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.keys == other.keys
+            && self.nick_networks == other.nick_networks
+            && self.our_private_key == other.our_private_key
+            && self.our_public_key == other.our_public_key
+            && self.keypair_creation_time == other.keypair_creation_time
+            && self.fish11 == other.fish11
+            && self.startup_data == other.startup_data
+            && self.entries == other.entries
+            && self.channel_keys == other.channel_keys
+            && self.channel_ratchet_states == other.channel_ratchet_states
+            && self.channel_nonce_caches == other.channel_nonce_caches
+            && self.topics == other.topics
+            && self.metrics == other.metrics
+    }
 }
 
 impl FishConfig {
@@ -200,23 +240,21 @@ impl FishConfig {
             channel_nonce_caches: HashMap::new(),
             topics: HashMap::new(),
             metrics: EncryptionMetrics::default(),
-            dirty: std::cell::Cell::new(false),
+            dirty: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
     /// Mark the configuration as dirty (needs saving)
     pub fn mark_dirty(&self) {
-        self.dirty.set(true);
+        self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Check if the configuration has unsaved changes
     pub fn is_dirty(&self) -> bool {
-        self.dirty.get()
+        self.dirty.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Mark the configuration as clean (just saved)
     pub fn mark_clean(&self) {
-        self.dirty.set(false);
+        self.dirty.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Get an entry from the configuration (convenience method)

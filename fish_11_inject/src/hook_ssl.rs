@@ -228,6 +228,16 @@ pub unsafe fn store_ssl_mapping(ssl: *mut SSL, socket: SOCKET) {
 }
 
 pub unsafe extern "C" fn hooked_ssl_read(ssl: *mut SSL, buf: *mut u8, num: c_int) -> c_int {
+    // Validate input pointers before any operation
+    if ssl.is_null() {
+        error!("hooked_ssl_read: ssl pointer is NULL");
+        return -1;
+    }
+    if buf.is_null() {
+        error!("hooked_ssl_read: buf pointer is NULL");
+        return -1;
+    }
+
     trace!("[h00k] hooked_ssl_read() called: ssl={:p}, buf={:p}, num={}", ssl, buf, num);
 
     let ssl_read_guard = match crate::lock_utils::try_lock_timeout(
@@ -397,6 +407,16 @@ pub unsafe extern "C" fn hooked_ssl_read(ssl: *mut SSL, buf: *mut u8, num: c_int
 }
 
 unsafe extern "C" fn hooked_ssl_write(ssl: *mut SSL, buf: *const u8, num: c_int) -> c_int {
+    // Validate input pointers before any operation
+    if ssl.is_null() {
+        error!("hooked_ssl_write: ssl pointer is NULL");
+        return -1;
+    }
+    if buf.is_null() && num > 0 {
+        error!("hooked_ssl_write: buf pointer is NULL with positive num={}", num);
+        return -1;
+    }
+
     #[cfg(debug_assertions)]
     trace!("[h00k] hooked_ssl_write() called: ssl={:p}, buf={:p}, num={}", ssl, buf, num);
 

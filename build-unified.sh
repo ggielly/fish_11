@@ -255,7 +255,7 @@ fi
 
 # Main program
 # Log without colors for these messages to avoid cargo issues
-echo "=== FiSH_11 nuild script (Linux/BSD/macOS) ==="
+echo "=== FiSH_11 build script (Linux/BSD/macOS) ==="
 echo "Detected OS: $(uname -s)"
 echo "Architecture: $(uname -m)"
 

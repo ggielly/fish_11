@@ -120,38 +120,42 @@ fn is_socket_connected_windows() -> bool {
 }
 
 #[cfg(not(windows))]
-// Other Unix (BSD, macOS): the implementation relies on /proc/net/tcp(6). While its Linux-centric, some BSDs
-// with Linux emulation (linprocfs) might support it. For native BSD/macOS support, sysctl bindings
-// would be required in the future but are out of scope for a basic portable implementation without adding large dependencies.
-//
-// TODO : implement native BSD/macOS support using sysctl.
-//
-/// For now, this function will only work on Linux systems with /proc filesystem.
-/// It checks /proc/net/tcp or /proc/net/tcp6 for established connections and matches them against the current process's
-/// file descriptors in /proc/self/fd.
-
+/// Checks for established TCP connections owned by this process.
+///
+/// - **Linux**: reads `/proc/net/tcp[6]` and `/proc/self/fd` (fully supported).
+/// - **FreeBSD / macOS / other**: `/proc` is not available. Returns `true` as a
+///   safe default — the caller uses this to decide whether to attempt network
+///   operations, and a false negative (saying "not connected" when we are) is
+///   worse than a false positive.
 fn is_socket_connected_unix() -> bool {
+    // On Linux, /proc is available for accurate checking
+    if std::path::Path::new("/proc/net/tcp").exists() {
+        return is_socket_connected_linux();
+    }
+
+    // BSD / macOS / other: no /proc — assume connected (safe default)
+    #[cfg(debug_assertions)]
+    log_debug!("is_socket_connected: /proc not available, assuming connected (BSD/macOS)");
+    true
+}
+
+#[cfg(not(windows))]
+/// Linux-specific implementation using /proc filesystem.
+fn is_socket_connected_linux() -> bool {
     use std::collections::HashSet;
     use std::fs::{self, File};
     use std::io::{BufRead, BufReader};
 
-    // Helper to parse /proc/net/tcp and return a set of established inodes
     fn get_established_inodes(path: &str) -> HashSet<String> {
         let mut inodes = HashSet::new();
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
-            // Skip header
             for line in reader.lines().skip(1) {
                 if let Ok(l) = line {
-                    // Line format:
-                    // sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
-                    // 0: 0100007F:13AD 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 33527 1 0000000000000000 100 0 0 10 0
                     let parts: Vec<&str> = l.split_whitespace().collect();
                     if parts.len() >= 10 {
                         let state = parts[3];
                         let inode = parts[9];
-
-                        // State 01 is ESTABLISHED
                         if state == "01" {
                             inodes.insert(inode.to_string());
                         }
@@ -162,25 +166,20 @@ fn is_socket_connected_unix() -> bool {
         inodes
     }
 
-    // FIRST get all inodes for established TCP connections from system tables
     let mut established_inodes = get_established_inodes("/proc/net/tcp");
-
-    // Optionally check tcp6 as well if desired, but sticking to tcp for basic compat
     let established_inodes_v6 = get_established_inodes("/proc/net/tcp6");
     established_inodes.extend(established_inodes_v6);
 
     if established_inodes.is_empty() {
-        return false; // No established connections at all
+        return false;
     }
 
-    // THEN Iterate over our own file descriptors to see if we own any of these sockets
     if let Ok(entries) = fs::read_dir("/proc/self/fd") {
         for entry in entries {
             if let Ok(entry) = entry {
                 if let Ok(path) = entry.path().read_link() {
                     let path_str = path.to_string_lossy();
-                    // format is socket:[inode]
-                    if path_str.starts_with("socket:[") && path_str.ends_with("]") {
+                    if path_str.starts_with("socket:[") && path_str.ends_with(']') {
                         let inode_str = &path_str[8..path_str.len() - 1];
                         if established_inodes.contains(inode_str) {
                             #[cfg(debug_assertions)]

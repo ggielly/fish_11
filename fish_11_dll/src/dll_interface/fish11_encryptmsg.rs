@@ -68,6 +68,8 @@ dll_function_identifier!(FiSH11_EncryptMsg, data, {
             #[cfg(debug_assertions)]
             log_debug!("Successfully encrypted message for channel {}", target);
 
+            config::increment_encryption_counter();
+
             // SECURITY: Clear the source buffer from memory
             crate::utils::secure_clear_string(&mut input_str);
 
@@ -115,6 +117,8 @@ dll_function_identifier!(FiSH11_EncryptMsg, data, {
     let result = format!("+FiSH {}", encrypted_base64);
 
     log_info!("Successfully encrypted message for {}", nickname);
+
+    config::increment_encryption_counter();
 
     // SECURITY: Clear the source buffer from memory
     crate::utils::secure_clear_string(&mut input_str);
@@ -263,5 +267,13 @@ mod tests {
 
         // Check that this is NOT a channel (so it will use private message path)
         assert!(!parts[0].starts_with(['#', '&']));
+    }
+
+    #[test]
+    fn test_encryption_counter_increments() {
+        let before = config::get_encryption_count().unwrap_or(0);
+        config::increment_encryption_counter();
+        let after = config::get_encryption_count().unwrap_or(0);
+        assert!(after > before);
     }
 }

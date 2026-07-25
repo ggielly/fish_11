@@ -9,7 +9,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose;
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
-use configparser::ini::Ini;
+use ini::Ini;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -190,63 +190,32 @@ impl Keystore {
         };
 
         // Parse the INI content
-        let mut ini = Ini::new();
-        ini.read(ini_string)?;
+        let ini = Ini::load_from_str(&ini_string)
+            .map_err(|e| format!("Failed to parse keystore INI: {}", e))?;
 
-        let master_key_salt = ini.get("MasterKey", "salt").unwrap_or_default();
+        let master_key_salt = ini.get_from(Some("MasterKey"), "salt").unwrap_or_default().to_string();
 
         // Load nonce counters
         let mut nonce_counters = HashMap::new();
-        if let Some(nonce_section) = ini.get_map_ref().get("NonceCounters") {
-            for (key, value_opt) in nonce_section.iter() {
-                if let Some(value_str) = value_opt {
-                    if let Ok(value) = value_str.parse::<u64>() {
-                        nonce_counters.insert(key.clone(), value);
-                    }
+        if let Some(nonce_section) = ini.section(Some("NonceCounters")) {
+            for (key, value) in nonce_section.iter() {
+                if let Ok(value) = value.parse::<u64>() {
+                    nonce_counters.insert(key.to_string(), value);
                 }
             }
         }
 
         // Load password verifier
-        let password_verifier = ini.get("MasterKey", "verifier");
+        let password_verifier = ini.get_from(Some("MasterKey"), "verifier").map(|s| s.to_string());
 
         // Load key metadata
         let mut key_metadata = HashMap::new();
-        if let Some(metadata_section) = ini.get_map_ref().get("KeyMetadata") {
-            for (key_id, value_opt) in metadata_section.iter() {
-                if let Some(metadata_str) = value_opt {
-                    // Parse metadata from string representation
-                    // Format: "created_at:last_used:usage_count:message_count:data_size_bytes:description:is_revoked"
-                    let parts: Vec<&str> = metadata_str.split(':').collect();
-                    if parts.len() >= 7 {
-                        if let (
-                            Ok(created_at),
-                            Ok(last_used),
-                            Ok(usage_count),
-                            Ok(message_count),
-                            Ok(data_size_bytes),
-                            Ok(is_revoked),
-                        ) = (
-                            parts[0].parse::<u64>(),
-                            parts[1].parse::<u64>(),
-                            parts[2].parse::<u64>(),
-                            parts[3].parse::<u64>(),
-                            parts[4].parse::<u64>(),
-                            parts[6].parse::<bool>(),
-                        ) {
-                            let description = parts[5..].join(":"); // Join remaining parts for description
-                            let metadata = KeyMetadata {
-                                created_at,
-                                last_used,
-                                usage_count,
-                                message_count,
-                                data_size_bytes,
-                                description,
-                                is_revoked,
-                            };
-                            key_metadata.insert(key_id.clone(), metadata);
-                        }
-                    }
+        if let Some(metadata_section) = ini.section(Some("KeyMetadata")) {
+            for (key_id, metadata_str) in metadata_section.iter() {
+                if let Ok(metadata) = serde_json::from_str::<KeyMetadata>(metadata_str) {
+                    key_metadata.insert(key_id.to_string(), metadata);
+                } else if let Some(metadata) = Self::parse_legacy_metadata(metadata_str) {
+                    key_metadata.insert(key_id.to_string(), metadata);
                 }
             }
         }
@@ -276,35 +245,31 @@ impl Keystore {
         let mut ini = Ini::new();
 
         // Save master key salt
-        ini.set("MasterKey", "salt", Some(self.master_key_salt.clone()));
+        ini.with_section(Some("MasterKey")).set("salt", self.master_key_salt.as_str());
 
         // Save password verifier if present
         if let Some(verifier) = &self.password_verifier {
-            ini.set("MasterKey", "verifier", Some(verifier.clone()));
+            ini.with_section(Some("MasterKey")).set("verifier", verifier.as_str());
         }
 
         // Save nonce counters
         for (context, counter) in &self.nonce_counters {
-            ini.set("NonceCounters", context, Some(counter.to_string()));
+            ini.with_section(Some("NonceCounters")).set(context.as_str(), counter.to_string().as_str());
         }
 
         // Save key metadata
         for (key_id, metadata) in &self.key_metadata {
-            let metadata_str = format!(
-                "{}:{}:{}:{}:{}:{}:{}",
-                metadata.created_at,
-                metadata.last_used,
-                metadata.usage_count,
-                metadata.message_count,
-                metadata.data_size_bytes,
-                metadata.description,
-                metadata.is_revoked
-            );
-            ini.set("KeyMetadata", key_id, Some(metadata_str));
+            let metadata_str = serde_json::to_string(metadata)
+                .map_err(|e| format!("Failed to serialize key metadata: {}", e))?;
+            ini.with_section(Some("KeyMetadata")).set(key_id.as_str(), metadata_str.as_str());
         }
 
         // Convert INI to string
-        let ini_string = ini.writes();
+        let mut buffer = std::io::Cursor::new(Vec::new());
+        ini.write_to(&mut buffer)
+            .map_err(|e| format!("Failed to write INI: {}", e))?;
+        let ini_string = String::from_utf8(buffer.into_inner())
+            .map_err(|e| format!("Failed to convert INI to UTF-8: {}", e))?;
 
         // Encrypt the keystore data
         let encrypted_data = Self::encrypt_keystore_data(&ini_string)?;
@@ -313,6 +278,95 @@ impl Keystore {
         std::fs::write(path, encrypted_data)?;
 
         Ok(())
+    }
+
+    /// Serialize the keystore to an INI string
+    pub fn to_ini_string(&self) -> Result<String, Box<dyn std::error::Error>> {
+        let mut ini = Ini::new();
+
+        ini.with_section(Some("MasterKey")).set("salt", self.master_key_salt.as_str());
+
+        if let Some(verifier) = &self.password_verifier {
+            ini.with_section(Some("MasterKey")).set("verifier", verifier.as_str());
+        }
+
+        for (context, counter) in &self.nonce_counters {
+            ini.with_section(Some("NonceCounters")).set(context.as_str(), counter.to_string().as_str());
+        }
+
+        for (key_id, metadata) in &self.key_metadata {
+            let metadata_str = serde_json::to_string(metadata)
+                .map_err(|e| format!("Failed to serialize key metadata: {}", e))?;
+            ini.with_section(Some("KeyMetadata")).set(key_id.as_str(), metadata_str.as_str());
+        }
+
+        let mut buffer = std::io::Cursor::new(Vec::new());
+        ini.write_to(&mut buffer)
+            .map_err(|e| format!("Failed to write INI: {}", e))?;
+        let ini_string = String::from_utf8(buffer.into_inner())
+            .map_err(|e| format!("Failed to convert INI to UTF-8: {}", e))?;
+
+        Ok(ini_string)
+    }
+
+    /// Deserialize a keystore from an INI string
+    pub fn from_ini_string(ini_string: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let ini = Ini::load_from_str(ini_string)
+            .map_err(|e| format!("Failed to parse keystore INI: {}", e))?;
+
+        let master_key_salt = ini.get_from(Some("MasterKey"), "salt").unwrap_or_default().to_string();
+        let password_verifier = ini.get_from(Some("MasterKey"), "verifier").map(|s| s.to_string());
+
+        let mut nonce_counters = HashMap::new();
+        if let Some(section) = ini.section(Some("NonceCounters")) {
+            for (key, value) in section.iter() {
+                if let Ok(value) = value.parse::<u64>() {
+                    nonce_counters.insert(key.to_string(), value);
+                }
+            }
+        }
+
+        let mut key_metadata = HashMap::new();
+        if let Some(section) = ini.section(Some("KeyMetadata")) {
+            for (key_id, metadata_str) in section.iter() {
+                if let Ok(metadata) = serde_json::from_str::<KeyMetadata>(metadata_str) {
+                    key_metadata.insert(key_id.to_string(), metadata);
+                } else if let Some(metadata) = Self::parse_legacy_metadata(metadata_str) {
+                    key_metadata.insert(key_id.to_string(), metadata);
+                }
+            }
+        }
+
+        Ok(Keystore {
+            master_key_salt,
+            password_verifier,
+            nonce_counters,
+            key_metadata,
+            file_path: None,
+        })
+    }
+
+    fn parse_legacy_metadata(s: &str) -> Option<KeyMetadata> {
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() < 7 {
+            return None;
+        }
+        let created_at = parts[0].parse::<u64>().ok()?;
+        let last_used = parts[1].parse::<u64>().ok()?;
+        let usage_count = parts[2].parse::<u64>().ok()?;
+        let message_count = parts[3].parse::<u64>().ok()?;
+        let data_size_bytes = parts[4].parse::<u64>().ok()?;
+        let is_revoked = parts[6].parse::<bool>().ok()?;
+        let description = parts[5..].join(":");
+        Some(KeyMetadata {
+            created_at,
+            last_used,
+            usage_count,
+            message_count,
+            data_size_bytes,
+            description,
+            is_revoked,
+        })
     }
 
     /// Get the default keystore path

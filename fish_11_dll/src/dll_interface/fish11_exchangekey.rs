@@ -169,7 +169,7 @@ dll_function_identifier!(FiSH11_ExchangeKey, data, {
 
         // Take a snapshot of the config and release the lock immediately
         let config_snapshot = {
-            let config_guard = CONFIG.lock();
+            let config_guard = CONFIG.write();
             config_guard.clone()
         }; // Lock released here
 
@@ -461,6 +461,13 @@ mod tests {
 
     use super::*;
 
+    /// Teardown: restore CONFIG keypair to None to prevent cross-test contamination
+    fn teardown_keypair() {
+        let mut config = CONFIG.write();
+        config.our_public_key = None;
+        config.our_private_key = None;
+    }
+
     // Helper function to create a test buffer
     fn _create_test_buffer(initial_content: &str) -> (*mut c_char, usize) {
         let buffer_size = 4096;
@@ -527,11 +534,7 @@ mod tests {
 
     #[test]
     fn test_get_or_generate_keypair_creates_new() {
-        // Clear any existing keypair
-        let mut config = CONFIG.lock();
-        config.our_public_key = None;
-        config.our_private_key = None;
-        drop(config);
+        teardown_keypair();
 
         // Call get_or_generate_keypair
         let result = get_or_generate_keypair();
@@ -547,6 +550,7 @@ mod tests {
 
     #[test]
     fn test_get_or_generate_keypair_returns_existing() {
+        teardown_keypair();
         use crate::crypto::generate_keypair;
         // Generate and store a keypair
         let original_keypair = generate_keypair();
@@ -735,11 +739,7 @@ mod tests {
 
     #[test]
     fn test_get_or_generate_keypair_creates_and_persists_keypair() {
-        // Clear any existing keypair
-        let mut config = CONFIG.lock();
-        config.our_public_key = None;
-        config.our_private_key = None;
-        drop(config);
+        teardown_keypair();
 
         let result = get_or_generate_keypair();
         assert!(result.is_ok());
@@ -747,5 +747,7 @@ mod tests {
         // Verify keypair was stored by retrieving it again
         let retrieved = get_keypair();
         assert!(retrieved.is_ok());
+
+        teardown_keypair();
     }
 }

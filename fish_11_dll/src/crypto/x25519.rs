@@ -155,7 +155,7 @@ pub fn compute_shared_secret(
 }
 
 /// Validate that a public key is a valid Curve25519 point
-fn validate_public_key(bytes: &[u8; 32]) -> Result<()> {
+pub fn validate_public_key(bytes: &[u8; 32]) -> Result<()> {
     // Check that it's not all zeros
     if bytes.iter().all(|&b| b == 0) {
         return Err(FishError::InvalidInput("Public key is all zeros".to_string()));

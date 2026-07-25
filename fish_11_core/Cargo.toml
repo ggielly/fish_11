@@ -1,6 +1,6 @@
 [package]
 name = "fish_11_core"
-version = "11.25.0"
+version = "11.26.0"
 edition = "2021"
 authors = ["GuY"]
 description = "FiSH_11 - Core utilities (platform-independent)"
@@ -25,8 +25,9 @@ hkdf = "0.12"
 sha2 = "0.10"
 secrecy = "0.8"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 zeroize = "1.8"
-configparser = "3.0"
+rust-ini = "0.21.3"
 base64 = "0.22"
 tempfile = "3.24.0"
 

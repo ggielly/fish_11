@@ -27,11 +27,12 @@ alias fish11_UpdateStatusIndicator {
   if ($len(%key) > 1) {
     var %colored_fp = $fish11_GetColoredFingerprint(%active)
     
-    if (!$window(@FiSH_Status)) { window -hn @FiSH_Status }
-    aline -p @FiSH_Status * $timestamp $+ %active is encrypted (Key: %colored_fp $+ )
-    
-    ; Show encryption in status bar with colored fingerprint
-    echo -at ** FiSH_11: %active [Fingerprint: %colored_fp $+ ]
+    if (%colored_fp != $null) {
+      if (!$window(@FiSH_Status)) { window -hn @FiSH_Status }
+      aline -p @FiSH_Status * $timestamp $+ %active is encrypted (Key: %colored_fp $+ )
+      
+      echo -at ** FiSH_11: %active [Fingerprint: %colored_fp $+ ]
+    }
   }
   else {
     if (!$window(@FiSH_Status)) { window -hn @FiSH_Status }

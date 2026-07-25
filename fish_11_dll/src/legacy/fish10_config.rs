@@ -79,7 +79,9 @@ fn load_keys_from_blowfish_ini(
         let line = line.trim();
 
         // Skip empty lines and comments
-        if line.is_empty() || line.starts_with(';') || line.starts_with('#') && !line.contains('=')
+        if line.is_empty()
+            || line.starts_with(';')
+            || (line.starts_with('#') && !line.contains('='))
         {
             continue;
         }

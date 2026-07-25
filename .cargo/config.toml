@@ -2,3 +2,8 @@
 # Default target for Windows builds (comment out for Linux/Unix builds)
 target = "i686-pc-windows-msvc"
 
+[env]
+# Force single-threaded test execution to prevent lock contention on shared globals
+# (CONFIG, LEGACY_CONFIG, NONCE_CACHE, etc.)
+RUST_TEST_THREADS = "1"
+

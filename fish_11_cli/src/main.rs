@@ -14,46 +14,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use fish_11_core::globals::{BUILD_DATE, BUILD_NUMBER, BUILD_TIME, BUILD_VERSION};
-use platform_types::{BOOL, DWORD, HWND, LIB_NAME};
-
-mod helpers_cli;
-use crate::helpers_cli::validate_config_file;
-
-// Default timeout for DLL operations in seconds
-const DEFAULT_TIMEOUT_SECONDS: u64 = 5;
-
-// Special timeout for listkeys command (which may take longer with large key databases)
-const DEFAULT_LISTKEYS_TIMEOUT_SECONDS: u64 = 10;
-
-// Use the centralized version string from the core library
-pub fn cli_version() -> String {
-    format!(
-        "v{} (compiled {} at {})",
-        fish_11_core::globals::BUILD_VERSION,
-        fish_11_core::globals::BUILD_DATE.as_str(),
-        fish_11_core::globals::BUILD_TIME.as_str()
-    )
-}
-
-/// Display version information in the format expected for -v/--version flags
-fn display_version() {
-    let build_type = if cfg!(debug_assertions) { "debug" } else { "release" };
-
-    println!(
-        "FiSH_11_cli {} (build {}-{}) *** Compiled {} at {} *** Written by [GuY], licensed under the GPL-v3 or above",
-        fish_11_core::globals::BUILD_VERSION,
-        fish_11_core::globals::BUILD_NUMBER.as_str(),
-        build_type,
-        fish_11_core::globals::BUILD_DATE.as_str(),
-        fish_11_core::globals::BUILD_TIME.as_str()
-    );
-}
+use platform_types::{BOOL, DWORD, HWND};
 
 use std::sync::RwLock;
 
-// Global flag to control output verbosity - using RwLock for better performance
-// (many reads, few writes) with thread safety
-static QUIET_MODE: RwLock<bool> = RwLock::new(false);
+// Global flags — must be defined before `mod helpers_cli` so the macro can see them
+pub(crate) static QUIET_MODE: RwLock<bool> = RwLock::new(false);
+static DEBUG_LOG_PATH: RwLock<Option<std::path::PathBuf>> = RwLock::new(None);
 
 /// Helper function to safely get the quiet mode value
 pub fn is_quiet_mode() -> bool {
@@ -86,31 +53,55 @@ macro_rules! info_print {
                 println!($($arg)*);
             }
         } else {
-            // If the lock is poisoned, default to printing (not quiet)
             eprintln!("Warning : QUIET_MODE lock was poisoned, defaulting to not quiet");
             println!($($arg)*);
         }
     };
 }
 
+mod helpers_cli;
+use crate::helpers_cli::validate_config_file;
+
+// Default timeout for DLL operations in seconds
+const DEFAULT_TIMEOUT_SECONDS: u64 = 5;
+
+// Special timeout for listkeys command (which may take longer with large key databases)
+const DEFAULT_LISTKEYS_TIMEOUT_SECONDS: u64 = 10;
+
+/// Display version information in the format expected for -v/--version flags
+fn display_version() {
+    let build_type = if cfg!(debug_assertions) { "debug" } else { "release" };
+
+    println!(
+        "FiSH_11_cli {} (build {}-{}) *** Compiled {} at {} *** Written by [GuY], licensed under the GPL-v3 or above",
+        fish_11_core::globals::BUILD_VERSION,
+        fish_11_core::globals::BUILD_NUMBER.as_str(),
+        build_type,
+        fish_11_core::globals::BUILD_DATE.as_str(),
+        fish_11_core::globals::BUILD_TIME.as_str()
+    );
+}
+
 // Define the LoadInfo structure that mIRC passes to our DLL
-// Updated to match the actual structure in dll_interface.rs
+// Must match LOADINFO in fish_11_dll/src/dll_interface/core.rs exactly
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 #[allow(non_snake_case)]
 struct LoadInfo {
     m_version: DWORD,
     m_hwnd: HWND,
-    m_keep: BOOL, // BOOL is c_int (i32)
+    m_keep: BOOL,
     m_unicode: BOOL,
     m_beta: DWORD,
     m_bytes: DWORD,
+    m_extra: DWORD,
 }
 
-// Function signatures for the DLL functions
+// Function signatures matching the actual DLL exports
+// LoadDll: extern "stdcall" fn(*mut LOADINFO) -> BOOL
 type DllLoadFn = extern "system" fn(*mut LoadInfo) -> c_int;
-type DllFunctionFn =
-    extern "system" fn(HWND, HWND, *mut c_char, usize, *mut c_char, usize, c_int, c_int) -> c_int;
+// mIRC DLL functions: extern "system" fn(HWND, HWND, *mut c_char, *mut c_char, BOOL, BOOL) -> c_int
+type DllFunctionFn = extern "system" fn(HWND, HWND, *mut c_char, *mut c_char, c_int, c_int) -> c_int;
 
 /// This is used when the direct DLL call might hang (like FiSH11_FileListKeys with large DBs)
 fn call_dll_function(
@@ -201,7 +192,7 @@ fn call_dll_function(
     let is_complete = Arc::new(AtomicBool::new(false));
     let is_complete_clone = is_complete.clone();
 
-    let _timer_handle = std::thread::spawn(move || {
+    let timer_handle = std::thread::spawn(move || {
         let start = Instant::now();
         let mut last_report = Instant::now();
 
@@ -236,20 +227,21 @@ fn call_dll_function(
 
         // If we reach here and the operation isn't complete, the timeout has been reached
         if !is_complete_clone.load(Ordering::SeqCst) {
-            println!("WARNING : function execution timed out after {:?}.", timeout);
-            println!("The DLL function may have hung, press Ctrl+c to break.");
+            // Always show timeout warnings, even in quiet mode — they are critical
+            eprintln!("WARNING: function execution timed out after {:?}.", timeout);
+            eprintln!("The DLL function may have hung, press Ctrl+c to break.");
         }
     });
     // Call the function
     info_print!("Calling DLL function {} with parameters : '{}'", function_name, params);
 
+    // mIRC DLL function signature: (mWnd, aWnd, data, parms, show, nopause) -> c_int
+    // The DLL determines buffer sizes internally via get_buffer_size(); we do NOT pass them.
     let result = function(
         std::ptr::null_mut(), // mWnd
         std::ptr::null_mut(), // aWnd
-        data_ptr,             // data (input/output)
-        data_buffer.len(),    // size of data buffer
-        parms_ptr,            // parms (additional params)
-        parms_buffer.len(),   // size of parms buffer
+        data_ptr,             // data (input/output buffer)
+        parms_ptr,            // parms (secondary buffer)
         1,                    // show (1 = show output, 0 = don't show)
         0,                    // nopause (0 = normal pause behavior)
     );
@@ -257,34 +249,27 @@ fn call_dll_function(
     // Mark operation as complete to stop the timer thread
     is_complete.store(true, Ordering::SeqCst);
 
+    // Wait for the timer thread to finish — it will exit promptly since is_complete is set
+    let _ = timer_handle.join();
+
     // Report how long it took
     let elapsed = start_time.elapsed();
 
     // Log the result and buffer info
     info_print!("DLL function returned code : {}", result);
 
-    // For debugging, examine the first few bytes of the buffer
-    // First, make sure we have a safe buffer size to work with
-    if buffer_size > 0 {
+    // Buffer preview — only in debug mode to avoid leaking sensitive data
+    if DEBUG_LOG_PATH.read().map(|g| g.is_some()).unwrap_or(false) && buffer_size > 0 {
         unsafe {
             let preview_size = 20.min(buffer_size);
             if preview_size > 0 {
                 let bytes: Vec<u8> =
                     std::slice::from_raw_parts(data_ptr as *const u8, preview_size).to_vec();
-
-                if !is_quiet_mode() {
-                    println!("Buffer first {} bytes : {:?}", preview_size, bytes);
-
-                    // Try to convert to string
-                    if let Ok(preview) = std::str::from_utf8(&bytes) {
-                        println!("Buffer preview as string : {}", preview);
-                    }
+                info_print!("Buffer first {} bytes : {:?}", preview_size, bytes);
+                if let Ok(preview) = std::str::from_utf8(&bytes) {
+                    info_print!("Buffer preview as string : {}", preview);
                 }
             }
-        }
-    } else {
-        if !is_quiet_mode() {
-            println!("Warning: buffer size is 0, cannot preview");
         }
     }
 
@@ -295,13 +280,20 @@ fn call_dll_function(
         if function_name == "FiSH11_FileListKeys" {
             info_print!("Note : processing large key databases can take time.");
         }
-    } // Check the result based on actual mIRC return codes
-    if result != 3 && result != 2 && result != 0 && result != 1 {
+    }
+
+    // MIRC_HALT (0) = function failed/halted — no useful data in buffer
+    if result == 0 {
+        return Err("DLL function returned MIRC_HALT (0) — function failed or halted".into());
+    }
+
+    // Unknown return code — warn but continue
+    if result != 1 && result != 2 && result != 3 {
         info_print!("Warning: DLL function returned unusual value: {}", result);
-        // Continue anyway - some functions might use different return codes
-    } // Convert buffer to String (handle null terminator)
-    let output = if result == 3 || result == 2 || result == 0 || result == 1 {
-        // Process any valid return code - the buffer may still contain useful data
+    }
+
+    // Extract result from buffer (MIRC_CONTINUE=1, MIRC_COMMAND=2, MIRC_IDENTIFIER=3)
+    let output = {
         // Find the length of the string (up to null terminator)
         let mut data_len = 0;
         // Ensure buffer_size is larger than 0 to avoid potential out-of-bounds access
@@ -382,8 +374,6 @@ fn call_dll_function(
                 "Function completed but returned no output.".to_string()
             }
         }
-    } else {
-        format!("Function completed with result code: {}", result)
     };
 
     Ok(output)
@@ -405,40 +395,25 @@ fn validate_input_length(input: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validates user input to prevent command injection
-/// Filters out potentially dangerous characters and sequences
+/// Validates user input before passing it to the DLL.
+///
+/// Intentionally permissive: only rejects null bytes, control characters, and
+/// path traversal sequences. Characters like `|`, `` ` ``, `&`, `;`, `/` are
+/// all valid in IRC nicknames, channel names, and messages. The DLL itself
+/// performs its own input parsing, so over-validation here breaks legitimate
+/// use cases (e.g. encrypting a message containing `&`).
 fn validate_input_content(input: &str) -> Result<(), String> {
-    // Check for null bytes which could cause issues
     if input.contains('\0') {
-        return Err("Input contains null byte which is not allowed".to_string());
+        return Err("Input contains null byte".to_string());
     }
 
-    // Check for potentially dangerous sequences
-    if input.contains("..\\") || input.contains("../") || input.contains("%00") {
-        return Err("Input contains potentially dangerous path traversal sequences".to_string());
+    // Reject control characters (except \r, \n, \t which are normal in IRC)
+    if input
+        .chars()
+        .any(|c| matches!(c, '\x00'..='\x08' | '\x0B' | '\x0C' | '\x0E'..='\x1F' | '\x7F'))
+    {
+        return Err("Input contains control characters".to_string());
     }
-
-    // Check for potential command injection attempts
-    if input.contains('|') || input.contains('`') || input.contains('&') || input.contains(';') {
-        return Err("Input contains potentially dangerous shell command characters".to_string());
-    }
-
-    // Check for potential escape sequences that could be harmful
-    if input.contains("\\r") || input.contains("\\n") || input.contains("\\t") {
-        // Check for actual control characters
-        if input.chars().any(|c| {
-            matches!(c, '\x00'..='\x1F') || c == '\x7F' // Control characters
-        }) {
-            return Err("Input contains potentially harmful control characters".to_string());
-        }
-    }
-
-    // Check for potential injection of mIRC commands
-    if input.starts_with('/') || input.contains("/msg") || input.contains("/echo") {
-        return Err("Input contains potentially harmful mIRC command sequences".to_string());
-    }
-
-    // Additional checks could be added here as needed
 
     Ok(())
 }
@@ -451,60 +426,40 @@ fn validate_user_input(input: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Sanitizes user input specifically for DLL function calls to prevent potential injection
-/// This function both validates and sanitizes input to make it safe for DLL functions
+/// Sanitizes user input for DLL function calls.
+///
+/// Strips control characters (except \r, \n, \t) and validates basic safety.
+/// Characters like `|`, `&`, `;`, `/`, `#` are intentionally kept — they are
+/// valid in IRC channel names, nicknames, and messages.
 fn sanitize_dll_input(input: &str) -> Result<String, String> {
-    // First, perform all the standard validations
     validate_user_input(input)?;
 
-    // Additional sanitization specific to DLL functions
-    let mut sanitized = input.to_string();
-
-    // Remove any potential control characters that might cause issues in DLLs
-    sanitized = sanitized
+    // Strip control characters that could cause issues in C string parsing
+    let sanitized: String = input
         .chars()
-        .filter(|c| !c.is_control() || *c == '\n' || *c == '\r' || *c == '\t') // Keep basic whitespace
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\r' || *c == '\t')
         .collect();
 
-    // Replace potential escape sequences
-    sanitized = sanitized.replace("\\0", ""); // Remove null byte representations
-
-    // Ensure no embedded null bytes (should already be caught by validation, but extra safety)
     if sanitized.contains('\0') {
-        return Err("Input contains null byte which is not allowed".to_string());
-    }
-
-    // Additional security check for potential code injection patterns
-    if sanitized.contains("<?")
-        || sanitized.contains("?>")
-        || sanitized.contains("<?php")
-        || sanitized.contains("javascript:")
-        || sanitized.contains("vbscript:")
-        || sanitized.contains("onerror")
-    {
-        return Err("Input contains potential script injection patterns".to_string());
+        return Err("Input contains null byte".to_string());
     }
 
     Ok(sanitized)
 }
 
-/// Validates DLL path to prevent path traversal and other security issues
+/// Validates DLL path.
+///
+/// Only rejects null bytes and shell metacharacters. Path traversal (`..`) is
+/// allowed — the OS and `libloading` handle resolution safely, and rejecting
+/// legitimate absolute/relative paths is more harmful than useful.
 fn validate_dll_path(dll_path: &str) -> Result<(), String> {
-    // Check for null bytes
     if dll_path.contains('\0') {
         return Err("DLL path contains null byte".to_string());
     }
 
-    // Check for path traversal attempts
-    if dll_path.contains("../") || dll_path.contains("..\\") {
-        return Err("DLL path contains path traversal sequences".to_string());
-    }
-
-    // Ensure the path has a valid shared library extension (platform-specific)
     let path = std::path::Path::new(dll_path);
     if let Some(extension) = path.extension() {
         let ext = extension.to_string_lossy().to_lowercase();
-        // Accept both Windows DLL and Linux shared library extensions
         if ext != "dll" && ext != "so" {
             return Err(format!("Invalid file extension: {} (expected .dll or .so)", ext));
         }
@@ -512,49 +467,48 @@ fn validate_dll_path(dll_path: &str) -> Result<(), String> {
         return Err("DLL path must have a .dll or .so extension".to_string());
     }
 
-    // Ensure the path doesn't contain potentially dangerous characters
-    if dll_path.contains('|')
-        || dll_path.contains('`')
-        || dll_path.contains('&')
-        || dll_path.contains(';')
-    {
-        return Err("DLL path contains dangerous characters".to_string());
-    }
-
     Ok(())
 }
 
-/// Validates command name to prevent injection of malicious commands
+/// Validates a positional argument (channel names, nicknames, messages, etc.).
+///
+/// This is intentionally permissive: it only rejects null bytes and path traversal
+/// sequences. Characters like `#`, `&`, `|`, `` ` ``, `;` are valid in IRC channel
+/// names and messages, so they must be allowed here.
+fn validate_argument(arg: &str) -> Result<(), String> {
+    if arg.contains('\0') {
+        return Err("Argument contains null byte".to_string());
+    }
+    if arg.contains("..\\") || arg.contains("../") || arg.contains("%00") {
+        return Err("Argument contains path traversal sequences".to_string());
+    }
+    Ok(())
+}
+
+/// Validates a command name to prevent injection.
+///
+/// Stricter than `validate_argument`: rejects shell metacharacters since
+/// command names come from a fixed set of known strings.
 fn validate_command_name(command: &str) -> Result<(), String> {
-    // Check for null bytes which could cause issues
     if command.contains('\0') {
-        return Err("Command contains null byte which is not allowed".to_string());
+        return Err("Command contains null byte".to_string());
     }
-
-    // Check for potentially dangerous sequences
     if command.contains("..\\") || command.contains("../") || command.contains("%00") {
-        return Err("Command contains potentially dangerous path traversal sequences".to_string());
+        return Err("Command contains path traversal sequences".to_string());
     }
-
-    // Check for potential command injection attempts
     if command.contains('|')
         || command.contains('`')
         || command.contains('&')
         || command.contains(';')
     {
-        return Err("Command contains potentially dangerous shell command characters".to_string());
+        return Err("Command contains dangerous shell characters".to_string());
     }
-
-    // Additional checks could be added here as needed
-    // For example, only allow alphanumeric characters and underscores/dashes
-    // Also allow common path characters like dots, slashes, and dots for file extensions
     if !command
         .chars()
         .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '/' || c == '.' || c == ':')
     {
         return Err("Command contains invalid characters".to_string());
     }
-
     Ok(())
 }
 
@@ -673,6 +627,7 @@ fn display_help() {
     println!("[Options]");
     println!("  -q, --quiet     Minimize output messages (useful for scripts)");
     println!("  -v, --version   Display version information");
+    println!("      --debug     Write debug log to fish11_cli_debug.log");
     println!();
     println!("<Commands>");
     println!("  -h,   --help                 Show this help message");
@@ -680,7 +635,7 @@ fn display_help() {
     println!("  -gv,  --getversion           Get the DLL version");
     println!("  -gk,  --genkey               Generate a new encryption key for a target");
     println!("  -sk,  --setkey               Set a specific key for a target");
-    println!("  -gk,  --getkey               Get the key for a target");
+    println!("  -gk2, --getkey               Get the key for a target");
     println!("  -dk,  --delkey               Delete a key for a target");
     println!("  -lk,  --listkeys             List all stored keys");
     println!("  -li,  --listkeysitem         List a specific key item");
@@ -762,15 +717,6 @@ fn validate_command_args(command: &str, args: &[String]) -> Result<(), String> {
 }
 
 fn main() {
-    // Create debug log
-    let debug_log_path = std::path::Path::new("fish11_cli_debug.log");
-    if let Ok(mut debug_log) = std::fs::File::create(debug_log_path) {
-        use std::io::Write;
-        let _ = writeln!(debug_log, "=== CLI DEBUG LOG ===");
-        let _ =
-            writeln!(debug_log, "Command arguments: {:?}", std::env::args().collect::<Vec<_>>());
-    }
-
     // Get command line arguments
     let args: Vec<String> = env::args().collect();
 
@@ -787,11 +733,27 @@ fn main() {
     while arg_index < args.len() {
         match args[arg_index].as_str() {
             "-q" | "--quiet" => {
-                // Set quiet mode
                 if let Ok(mut guard) = QUIET_MODE.write() {
                     *guard = true;
                 } else {
                     eprintln!("Warning: QUIET_MODE lock was poisoned during update");
+                }
+                arg_index += 1;
+            }
+            "--debug" => {
+                // Create debug log file — only when explicitly requested
+                let debug_path = std::path::PathBuf::from("fish11_cli_debug.log");
+                if let Ok(mut debug_log) = std::fs::File::create(&debug_path) {
+                    use std::io::Write;
+                    let _ = writeln!(debug_log, "=== CLI DEBUG LOG ===");
+                    let _ = writeln!(
+                        debug_log,
+                        "Command arguments: {:?}",
+                        std::env::args().collect::<Vec<_>>()
+                    );
+                }
+                if let Ok(mut guard) = DEBUG_LOG_PATH.write() {
+                    *guard = Some(debug_path);
                 }
                 arg_index += 1;
             }
@@ -816,9 +778,12 @@ fn main() {
                 processed_args.push("getversion".to_string());
                 arg_index += 1;
             }
-            "-gk" | "--genkey" | "--getkey" => {
-                // Map to genkey command (also covers getkey)
+            "-gk" | "--genkey" => {
                 processed_args.push("genkey".to_string());
+                arg_index += 1;
+            }
+            "-gk2" | "--getkey" => {
+                processed_args.push("getkey".to_string());
                 arg_index += 1;
             }
             "-sk" | "--setkey" => {
@@ -922,9 +887,9 @@ fn main() {
                 arg_index += 1;
             }
             _ => {
-                // Not an option, add to processed args after validation
+                // Not an option — add to processed args after basic validation
                 let arg = args[arg_index].clone();
-                if let Err(e) = validate_command_name(&arg) {
+                if let Err(e) = validate_argument(&arg) {
                     println!("Invalid argument: {}", e);
                     return;
                 }
@@ -1021,14 +986,15 @@ fn main() {
         }
     };
 
-    // Prepare the LOADINFO structure (updated to match actual structure)
+    // Prepare the LOADINFO structure — must match core.rs LOADINFO layout
     let mut load_info = LoadInfo {
-        m_version: 0x00370007, // mIRC version as DWORD
+        m_version: 0x00370007, // mIRC 7.73 encoded as DWORD
         m_hwnd: std::ptr::null_mut(),
         m_keep: 1,    // BOOL (TRUE)
         m_unicode: 0, // BOOL (FALSE)
         m_beta: 0,
         m_bytes: fish_11_core::globals::DLL_BUFFER_SIZE as DWORD,
+        m_extra: 0,
     };
 
     // Call LoadDll if found
@@ -1104,15 +1070,13 @@ fn main() {
         let raw_params = processed_args[2..].join(" ");
 
         // Sanitize the user input before passing it to the DLL
-        let sanitized_params = match sanitize_dll_input(&raw_params) {
+        match sanitize_dll_input(&raw_params) {
             Ok(sanitized) => sanitized,
             Err(validation_error) => {
                 println!("Error: Invalid input - {}", validation_error);
                 return;
             }
-        };
-
-        sanitized_params.replace('$', "$$")
+        }
     } else {
         String::new()
     };
@@ -1472,31 +1436,34 @@ mod tests {
     }
 
     #[test]
-    fn test_sanitize_dll_input_script_injection_patterns() {
-        // Test that script injection patterns we specifically check for are detected
-        let injection_inputs = vec![
+    fn test_sanitize_dll_input_rejects_control_chars() {
+        // Control characters (except \r, \n, \t) are rejected
+        assert!(sanitize_dll_input("hello\x00world").is_err());
+        assert!(sanitize_dll_input("hello\x01world").is_err());
+        assert!(sanitize_dll_input("hello\x7Fworld").is_err());
+
+        // But \r, \n, \t are allowed (common in IRC)
+        assert!(sanitize_dll_input("hello\nworld").is_ok());
+        assert!(sanitize_dll_input("hello\r\nworld").is_ok());
+        assert!(sanitize_dll_input("hello\tworld").is_ok());
+    }
+
+    #[test]
+    fn test_sanitize_dll_input_allows_irc_characters() {
+        // Characters that are valid in IRC messages must not be rejected
+        let irc_inputs = vec![
+            "Hello &amp; world",
+            "I use `fish` for encryption",
+            "A | B | C",
+            "test; echo done",
             "<?xml version=\"1.0\"?>",
             "javascript:alert(1)",
-            "vbscript:alert(1)",
-            "<?php echo 'test'; ?>",
         ];
 
-        for input in injection_inputs {
+        for input in irc_inputs {
             let result = sanitize_dll_input(input);
-            assert!(result.is_err(), "Input should have been rejected: {}", input);
+            assert!(result.is_ok(), "IRC-valid input should not be rejected: {}", input);
         }
-
-        // Specifically test that <script> tag is NOT caught by our sanitizer (by design)
-        // since our function currently only checks for specific patterns
-        let script_tag_input = "<script>alert('xss')</script>";
-        let result = sanitize_dll_input(script_tag_input);
-        // This might actually pass through our current sanitizer, let's verify
-        // Our current implementation only checks for <?, javascript:, etc.
-        // so the <script> tag may not be rejected by the sanitize_dll_input function directly
-        // but might be caught by validation.
-
-        // Actually let's just focus on what our function does catch:
-        assert!(sanitize_dll_input("<? echo 'test'; ?>").is_err());
     }
 
     #[test]
@@ -1515,24 +1482,20 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_dll_path_security_checks() {
-        // Test DLL path validation security checks
-        let valid_path = "test.dll";
-        let result = validate_dll_path(valid_path);
+    fn test_validate_dll_path() {
+        // Valid paths
+        assert!(validate_dll_path("test.dll").is_ok());
+        assert!(validate_dll_path("lib.so").is_ok());
+        assert!(validate_dll_path("../test.dll").is_ok());
+        assert!(validate_dll_path("C:\\FiSH\\test.dll").is_ok());
 
-        assert!(result.is_ok());
+        // Invalid: null byte
+        assert!(validate_dll_path("test\0.dll").is_err());
 
-        // Test path traversal attempt
-        let traversal_path = "../test.dll";
-        let result = validate_dll_path(traversal_path);
-
-        assert!(result.is_err());
-
-        // Test with dangerous characters
-        let dangerous_path = "test|malicious.dll";
-        let result = validate_dll_path(dangerous_path);
-
-        assert!(result.is_err());
+        // Invalid: wrong extension
+        assert!(validate_dll_path("test.txt").is_err());
+        assert!(validate_dll_path("test.exe").is_err());
+        assert!(validate_dll_path("test").is_err());
     }
 
     #[test]

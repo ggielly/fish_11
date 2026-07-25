@@ -42,7 +42,7 @@ where
 
 /// Checks if a nonce has been seen before for a channel.
 /// Returns `true` if the nonce is a duplicate (potential replay).
-pub fn check_nonce(channel: &str, nonce: &[u8; 12]) -> DllResult<bool> {
+pub fn check_nonce(channel: &str, nonce: &[u8; 24]) -> DllResult<bool> {
     let channel_name = channel.to_lowercase();
     let result = with_config(|config| {
         if let Some(cache) = config.channel_nonce_caches.get(&channel_name) {
@@ -55,7 +55,7 @@ pub fn check_nonce(channel: &str, nonce: &[u8; 12]) -> DllResult<bool> {
 }
 
 /// Adds a nonce to the cache for a specific channel.
-pub fn add_nonce(channel: &str, nonce: [u8; 12]) -> DllResult<()> {
+pub fn add_nonce(channel: &str, nonce: [u8; 24]) -> DllResult<()> {
     let channel_name = channel.to_lowercase();
     with_config_mut(|config| {
         let cache = config.channel_nonce_caches.entry(channel_name).or_insert_with(NonceCache::new);

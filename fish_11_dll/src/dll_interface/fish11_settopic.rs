@@ -7,7 +7,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 use crate::unified_error::{DllError, DllResult};
-use crate::{buffer_utils, config};
+use crate::{buffer_utils, config, dll_interface::get_buffer_size};
 
 /// DLL function to set a plaintext topic for a channel
 ///
@@ -74,7 +74,7 @@ pub extern "stdcall" fn FiSH11_SetTopic(data: *mut c_char) -> i32 {
             };
 
             unsafe {
-                buffer_utils::write_cstring_to_buffer(data, 900, &cstring).ok();
+                buffer_utils::write_cstring_to_buffer(data, get_buffer_size(), &cstring).ok();
             }
             1 // Return success code
         }
@@ -143,7 +143,7 @@ pub extern "stdcall" fn FiSH11_GetTopic(data: *mut c_char) -> i32 {
             };
 
             unsafe {
-                buffer_utils::write_cstring_to_buffer(data, 900, &cstring).ok();
+                buffer_utils::write_cstring_to_buffer(data, get_buffer_size(), &cstring).ok();
             }
             1 // Return success code
         }
@@ -214,7 +214,7 @@ pub extern "stdcall" fn FiSH11_RemoveTopic(data: *mut c_char) -> i32 {
             };
 
             unsafe {
-                buffer_utils::write_cstring_to_buffer(data, 900, &cstring).ok();
+                buffer_utils::write_cstring_to_buffer(data, get_buffer_size(), &cstring).ok();
             }
             1 // Return success code
         }
@@ -240,5 +240,46 @@ mod tests {
         // The function expects the input to be in the buffer, so this test is illustrative
         // In practice, the DLL would be called from mIRC with the input already in the buffer
         assert!(result >= 0); // Check that it doesn't crash
+    }
+
+    #[test]
+    fn test_topic_roundtrip_set_get_remove() {
+        let channel = "#roundtrip_test";
+        let topic = "Hello roundtrip world!";
+
+        config::with_config_mut(|config| {
+            config::topics::set_topic(config, channel, topic)
+        }).unwrap();
+
+        let result = config::with_config(|config| {
+            config::topics::get_topic(config, channel)
+        }).unwrap();
+        assert_eq!(result, Some(topic.to_string()));
+
+        let removed = config::with_config_mut(|config| {
+            config::topics::remove_topic(config, channel)
+        }).unwrap();
+        assert!(removed);
+
+        let result = config::with_config(|config| {
+            config::topics::get_topic(config, channel)
+        }).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_get_topic_nonexistent_returns_none() {
+        let result = config::with_config(|config| {
+            config::topics::get_topic(config, "#nonexistent_channel")
+        }).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_remove_topic_nonexistent_returns_false() {
+        let removed = config::with_config_mut(|config| {
+            config::topics::remove_topic(config, "#nonexistent_channel")
+        }).unwrap();
+        assert!(!removed);
     }
 }

@@ -1,0 +1,997 @@
+Network Working Group                                      Guillaume Gielly
+Request for Comments: XXXX                                   Fish11-Project
+Category: Standards Track                                      July 2026
+
+         FiSH-11 Channel Encryption Protocol 2 (FCEP-2)
+        MLS over Internet Relay Chat Transport Profile
+
+Status of This Memo
+
+   This document specifies a standards-track extension for FiSH-11 clients.
+   Distribution of this memo is unlimited.
+
+Abstract
+
+   This document defines FCEP-2, a protocol for secure multi-party
+   communication over Internet Relay Chat (IRC).
+
+   FCEP-2 uses IRC exclusively as an untrusted transport and delegates
+   group key establishment, member lifecycle, message encryption,
+   sender authentication, forward secrecy, and post-compromise security
+   to Messaging Layer Security (MLS), as specified in RFC 9420.
+
+   FCEP-2 defines:
+
+   - An IRC transport profile for MLS serialized objects;
+   - Discovery and delivery of MLS KeyPackages;
+   - Delivery of Welcome, Proposal, Commit, and Application messages;
+   - Fragmentation suitable for the IRC line-size constraint;
+   - Mapping between IRC channels and MLS group identifiers;
+   - Device identities and trust verification;
+   - Ordering, resynchronization, replay handling, and persistence rules;
+   - A Rust implementation profile based on OpenMLS.
+
+   FCEP-2 does not define a new cryptographic group protocol. MLS is the
+   sole authority for group cryptographic state.
+
+Table of Contents
+
+   1.  Introduction
+   2.  Conventions and Terminology
+   3.  Goals and Non-Goals
+   4.  Protocol Architecture
+   5.  Cryptographic Profile
+   6.  Identity and Device Model
+   7.  Group Binding and Naming
+   8.  Transport Envelope
+   9.  IRC Commands and Message Types
+   10. Fragmentation and Reassembly
+   11. KeyPackage Publication and Discovery
+   12. Group Creation
+   13. Joining a Group
+   14. Application Messages
+   15. Proposals, Commits, and Epochs
+   16. Member Removal and Device Revocation
+   17. Delivery Ordering and Concurrency
+   18. Resynchronization and Offline Recovery
+   19. State Persistence
+   20. Rust and OpenMLS Implementation Profile
+   21. Reference Data Structures
+   22. Client Behaviour
+   23. Security Considerations
+   24. Migration from FCEP-1
+   25. IANA Considerations
+
+1. Introduction
+
+   FCEP-1 attempted to establish an encrypted IRC channel by distributing
+   a shared symmetric Channel Key from a coordinator to all members.
+
+   FCEP-1 MUST NOT be used for new groups. In particular, a single shared
+   symmetric ratchet cannot safely support concurrent senders, out-of-order
+   delivery, reliable epoch transitions, or post-compromise recovery.
+
+   FCEP-2 replaces the FCEP-1 Channel Key, coordinator ratchet, nonce
+   cache, and manual key derivation with an MLS group state.
+
+   A FCEP-2 client MUST use an MLS implementation conforming to RFC 9420.
+   A client using OpenMLS SHOULD use a stable release and pin its exact
+   dependency version. RFC 9420 specifies group establishment for
+   asynchronous groups, forward secrecy, and post-compromise security.
+   [RFC9420]
+
+2. Conventions and Terminology
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   RFC 2119 and RFC 8174.
+
+   IRC Channel:
+      An IRC channel name such as "#fish11" or "&local".
+
+   MLS Group:
+      An MLS group represented by an MLS Group ID and an MLS epoch.
+
+   Group Binding:
+      The durable association between an IRC network, an IRC channel and
+      a particular MLS Group ID.
+
+   Device:
+      One concrete installation of a FCEP-2 client. Every device is an
+      independent MLS leaf node.
+
+   Identity:
+      A persistent cryptographic signing identity controlling one or more
+      devices. An IRC nickname is not an identity.
+
+   KeyPackage:
+      The public, signed MLS object published by a device and consumed
+      when the device is added to a group.
+
+   Proposal:
+      An MLS proposal for an Add, Remove, Update or other group operation.
+
+   Commit:
+      An MLS message applying one or more proposals and advancing a group
+      to a new MLS epoch.
+
+   Welcome:
+      An MLS message sent privately to an added device, allowing it to
+      construct its local MLS group state.
+
+   Delivery Service (DS):
+      The transport system that distributes MLS objects. In FCEP-2, IRC
+      is the default DS. An optional FCEP-2 relay bot MAY augment it.
+
+   Envelope:
+      An FCEP-2 textual wrapper around a serialized MLS object.
+
+   Fragment:
+      One transport portion of a complete FCEP-2 envelope.
+
+   Canonical Channel Name:
+      The case-normalized IRC channel representation used internally by
+      the client for local lookups. It MUST use the active IRC network's
+      CASEMAPPING rules, not unconditional Unicode or ASCII lowercasing.
+
+3. Goals and Non-Goals
+
+3.1. Goals
+
+   FCEP-2 provides:
+
+   - End-to-end confidentiality from IRC servers and passive observers;
+   - Cryptographic sender authentication at the MLS member/device level;
+   - Forward secrecy and post-compromise security provided by MLS;
+   - Dynamic addition, update, removal and revocation of devices;
+   - Support for concurrent senders and moderate message reordering;
+   - Operation on ordinary IRC servers without server modification;
+   - Optional asynchronous joining via pre-published KeyPackages.
+
+3.2. Non-Goals
+
+   FCEP-2 does not provide:
+
+   - Hiding of IRC metadata, including channel, nickname, timing, traffic
+     volume, approximate ciphertext length, IP address, and server-visible
+     membership;
+   - Retraction of plaintext already obtained by a legitimate member;
+   - Cryptographic proof that an IRC nickname belongs to a human identity;
+   - Protection when an endpoint, its operating system, or its unlocked
+     local secret storage is compromised;
+   - Interoperability with legacy FiSH, FiSH-11, or FCEP-1 ciphertexts;
+   - A global ordering service stronger than the ordering of IRC messages
+     received by an individual client.
+
+4. Protocol Architecture
+
+   FCEP-2 consists of four layers:
+
+       +-----------------------------------------------------------+
+       |                    FiSH-11 / mIRC UI                     |
+       +-----------------------------------------------------------+
+       | FCEP-2: identity, envelope, fragments, sync, persistence |
+       +-----------------------------------------------------------+
+       |        OpenMLS: RFC 9420 group state and operations      |
+       +-----------------------------------------------------------+
+       | IRC: PRIVMSG / NOTICE / optional relay bot transport     |
+       +-----------------------------------------------------------+
+
+   The FCEP-2 layer MUST NOT derive message keys, implement a group key
+   ratchet, create AEAD nonces for MLS messages, or reinterpret MLS
+   ciphertext fields. Those operations are entirely owned by MLS.
+
+   The IRC network is untrusted. It MAY reorder, duplicate, delay, drop,
+   suppress, replay, inject, or observe FCEP-2 envelopes. A conforming
+   client MUST rely on MLS validation and FCEP-2 transport state, not IRC
+   source metadata, for security decisions.
+
+5. Cryptographic Profile
+
+5.1. Mandatory MLS Version
+
+   FCEP-2 version 2.0 uses MLS version 1 as defined by RFC 9420.
+
+5.2. Mandatory Ciphersuite
+
+   An FCEP-2 implementation MUST support:
+
+      MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+
+   An implementation MAY negotiate other RFC 9420 ciphersuites only when
+   every device in the group advertises support for them.
+
+   FCEP-2 MUST NOT replace the MLS AEAD with ChaCha20-Poly1305, MUST NOT
+   substitute custom HKDF labels, and MUST NOT inject FiSH-11 symmetric
+   keys into MLS state.
+
+5.3. Local Storage Encryption
+
+   The cryptographic protection of state at rest is outside MLS. FCEP-2
+   implementations MUST protect private key material and persisted group
+   state using platform secure storage or authenticated encryption rooted
+   in a user-controlled secret.
+
+   On Windows, an implementation SHOULD use DPAPI scoped to the current
+   user and SHOULD additionally support a user-selected master password
+   derived with Argon2id.
+
+6. Identity and Device Model
+
+6.1. Device Identity
+
+   Each installation MUST generate a long-lived MLS signing key pair.
+   The public signing key MUST be represented as an Ed25519 fingerprint.
+
+   A device identifier MUST be a randomly generated 128-bit value. It
+   MUST remain stable across normal restarts and MUST change if the device
+   signing key is replaced.
+
+   The following is an example identity label:
+
+      fish11:ed25519:6d8a...e91c/device:550e8400-e29b-41d4-a716-446655440000
+
+6.2. Nicknames
+
+   IRC nicknames MUST be used only to route an IRC NOTICE or to display
+   a human-friendly sender label.
+
+   A client MUST NOT treat a nickname match as identity authentication.
+   It MUST NOT automatically trust a changed public-key fingerprint merely
+   because the IRC nickname is unchanged.
+
+6.3. Trust States
+
+   Every known device identity MUST have one of these local trust states:
+
+      Unknown:
+         First observed identity; no out-of-band confirmation.
+
+      TOFU:
+         Trust on first use; fingerprint was persisted locally.
+
+      Verified:
+         Fingerprint was confirmed through an out-of-band mechanism.
+
+      Changed:
+         A known identity label presented an unexpected signing key.
+
+      Revoked:
+         The device has been removed from all local groups or locally
+         blocked by the user.
+
+   A client SHOULD visibly distinguish Unknown and TOFU devices from
+   Verified devices.
+
+7. Group Binding and Naming
+
+7.1. Binding
+
+   A FCEP-2 group binding consists of:
+
+      protocol_version
+      network_id
+      canonical_channel_name
+      mls_group_id
+      creation_fingerprint
+      created_at
+
+   The binding MUST be persisted before the client sends the first
+   application message for that group.
+
+7.2. Network Identifier
+
+   network_id MUST be a stable, locally configured identifier for the IRC
+   network. It SHOULD be derived from a canonical configured server name,
+   server port, TLS server certificate fingerprint where available, and a
+   locally assigned network label.
+
+   A raw server name alone MUST NOT be assumed globally unique.
+
+7.3. MLS Group ID
+
+   The MLS Group ID MUST be generated from at least 128 bits of CSPRNG
+   output. It MUST NOT be the raw IRC channel name.
+
+   An IRC channel can host multiple historical FCEP-2 groups. A new group
+   creation on the same channel MUST use a new MLS Group ID.
+
+8. Transport Envelope
+
+8.1. General Syntax
+
+   Every unfragmented FCEP-2 payload is encoded as:
+
+      +FCEP2 <type> <group-id> <payload>
+
+   where:
+
+      <type>     is one ASCII character defined in Section 9;
+      <group-id> is unpadded base64url encoding of the MLS Group ID;
+      <payload>  is unpadded base64url encoding of a TLS-serialized
+                 MLS object or FCEP-2 control object.
+
+   The complete payload following the IRC trailing parameter MUST contain
+   only printable ASCII characters.
+
+8.2. Encoding
+
+   FCEP-2 MUST use base64url encoding without padding as defined by
+   RFC 4648 Section 5.
+
+   FCEP-2 objects MUST be serialized with the TLS serialization format
+   required by MLS and implemented by OpenMLS/tls_codec.
+
+   A parser MUST reject:
+
+   - invalid base64url;
+   - padded base64url;
+   - unknown critical type values;
+   - a group-id shorter than 16 bytes;
+   - oversized payloads;
+   - non-canonical or malformed MLS serializations.
+
+8.3. Associated Context
+
+   FCEP-2 MUST NOT modify MLS authenticated data. It MAY use the IRC
+   channel and network binding as application context when configuring
+   group extensions or displaying messages, but acceptance of a message
+   MUST depend on MLS Group ID and MLS validation, not only IRC location.
+
+9. IRC Commands and Message Types
+
+9.1. Channel-Scoped Objects
+
+   Channel-scoped objects MUST be sent as PRIVMSG to the bound IRC channel.
+
+      PRIVMSG <channel> :+FCEP2 A <gid> <payload>
+      PRIVMSG <channel> :+FCEP2 P <gid> <payload>
+      PRIVMSG <channel> :+FCEP2 C <gid> <payload>
+
+   A:
+      MLS Application message.
+
+   P:
+      MLS Proposal message.
+
+   C:
+      MLS Commit message.
+
+   A receiving client MUST deserialize the MLS object and verify that its
+   embedded Group ID equals <gid> and its local binding before processing.
+
+9.2. Device-Scoped Objects
+
+   Device-scoped objects MUST be sent as NOTICE to a specific IRC nickname.
+
+      NOTICE <nick> :+FCEP2 W <gid> <payload>
+      NOTICE <nick> :+FCEP2 K <device-id> <payload>
+      NOTICE <nick> :+FCEP2 R <request-id> <payload>
+      NOTICE <nick> :+FCEP2 S <gid> <payload>
+      NOTICE <nick> :+FCEP2 X <request-id> <payload>
+
+   W:
+      MLS Welcome message.
+
+   K:
+      KeyPackage publication or KeyPackage response.
+
+   R:
+      Request, including KeyPackage and synchronization requests.
+
+   S:
+      Synchronization object, such as a requested missing Commit chain.
+
+   X:
+      Acknowledgement or negative acknowledgement for a request.
+
+9.3. Notices Versus Privmsgs
+
+   FCEP-2 control traffic SHOULD use NOTICE. MLS application, proposal,
+   and commit messages belonging to a group MUST use PRIVMSG to the group
+   channel unless all members explicitly use an out-of-band relay mode.
+
+   A client MUST suppress raw FCEP-2 payloads from the ordinary chat view
+   unless a diagnostic mode is enabled.
+
+10. Fragmentation and Reassembly
+
+10.1. Rationale
+
+   IRC lines are limited to 512 octets including command overhead and
+   line termination. FCEP-2 objects, especially KeyPackages, Welcomes,
+   Commits, and ratchet-tree-bearing messages, can exceed the usable
+   payload capacity.
+
+10.2. Fragment Format
+
+   A fragmented object MUST use:
+
+      +FCEP2 F <object-id> <index>/<count> <original-type> <data>
+
+   <object-id> MUST be 128 random bits encoded as unpadded base64url.
+   <index> is zero-based.
+   <count> is the total number of fragments.
+   <original-type> is the type character of the reassembled envelope.
+   <data> is a base64url fragment.
+
+10.3. Fragment Rules
+
+   A sender MUST:
+
+   - use a fresh object-id for every logical object;
+   - transmit fragments in ascending index order;
+   - keep each resulting IRC line below the server line limit;
+   - limit a logical object to 256 fragments;
+   - limit total serialized object size to 1 MiB unless configured lower.
+
+   A receiver MUST:
+
+   - key reassembly by sender device identity where available, IRC source,
+     object-id, and original-type;
+   - accept fragments in arbitrary order;
+   - reject inconsistent count or original-type values;
+   - enforce a maximum of 32 concurrent reassemblies per remote source;
+   - discard incomplete assemblies after 120 seconds;
+   - enforce the 1 MiB total reassembly limit;
+   - never process a partial object as MLS input.
+
+   A receiver MAY send an X negative acknowledgement for missing fragments,
+   but correctness MUST NOT depend on acknowledgements.
+
+11. KeyPackage Publication and Discovery
+
+11.1. Publication
+
+   A device MUST create fresh MLS KeyPackages according to its configured
+   replenishment policy. A device SHOULD maintain at least 10 unpublished
+   or unconsumed KeyPackages when it expects asynchronous invitations.
+
+   A device MAY publish KeyPackages through:
+
+   - direct NOTICE in response to a request;
+   - an optional trusted-by-availability but untrusted-by-confidentiality
+     FCEP-2 relay bot;
+   - a manually configured public directory.
+
+   The directory or relay is not trusted for identity. The KeyPackage's
+   MLS signature and local identity-verification policy remain authoritative.
+
+11.2. Request
+
+   A requester sends:
+
+      NOTICE <nick> :+FCEP2 R <request-id> KP <device-id>
+
+   A responder returns one or more K objects containing serialized
+   KeyPackages. The responder SHOULD issue an X acknowledgement indicating
+   whether the KeyPackage was accepted, unavailable, expired, or already
+   consumed.
+
+11.3. Consumption
+
+   A KeyPackage MUST be treated as single-use unless MLS explicitly allows
+   it under the selected policy. After use in an Add Commit, the adding
+   client MUST mark it consumed locally.
+
+   An implementation MUST reject expired, malformed, unsupported, or
+   identity-inconsistent KeyPackages.
+
+12. Group Creation
+
+12.1. Initiator
+
+   Any verified or locally trusted device MAY create a group. The group
+   creator is not a permanent cryptographic coordinator and has no
+   unilateral authority after creation unless an application policy grants
+   administrative rights.
+
+12.2. Creation Procedure
+
+   The creator MUST:
+
+   1. Generate a random MLS Group ID.
+   2. Create a new OpenMLS MlsGroup with the mandatory ciphersuite.
+   3. Enable a sender-ratchet configuration suitable for IRC reordering.
+   4. Persist the new MLS group state and group binding atomically.
+   5. Obtain and validate one KeyPackage per invited device.
+   6. Produce an Add proposal and Commit using MLS.
+   7. Persist the staged local commit state.
+   8. Send the Commit to the IRC channel as type C.
+   9. Send one Welcome as type W to every newly added device.
+   10. Merge the pending Commit only after durable local persistence.
+   11. Display the group fingerprint and member device fingerprints.
+
+   A creator MUST NOT send application messages in the new epoch until its
+   own commit state has been durably persisted and merged.
+
+13. Joining a Group
+
+13.1. Welcome Processing
+
+   A joining device receiving W MUST:
+
+   1. Reassemble the complete object if fragmented.
+   2. Deserialize the MLS Welcome.
+   3. Verify that the contained group information matches the expected
+      FCEP-2 binding or obtain explicit user confirmation for a new binding.
+   4. Create the MLS group using OpenMLS Welcome processing.
+   5. Persist the complete new group state atomically.
+   6. Send an X acknowledgement to the inviter or configured relay.
+   7. Begin processing subsequent C, P, and A objects for that Group ID.
+
+   A device MUST NOT consider itself joined merely because it received an
+   IRC invite, entered the channel, or received an unverified nickname
+   message.
+
+13.2. Welcome Confidentiality
+
+   A Welcome MUST be delivered only to the target device or an authorized
+   opaque relay mailbox. It MUST NOT be broadcast as a normal channel
+   PRIVMSG.
+
+14. Application Messages
+
+14.1. Sending
+
+   To send plaintext to a bound group, a client MUST:
+
+   1. Obtain exclusive access to the local MlsGroup state.
+   2. Confirm that the group has no unresolved local pending commit.
+   3. Create an MLS Application message through OpenMLS.
+   4. Serialize the returned MLSMessage without alteration.
+   5. Persist all MLS state changes before transport transmission.
+   6. Send the serialized object as a type A envelope or F fragments.
+   7. Release group-state ownership.
+
+   The FCEP-2 layer MUST NOT generate message nonces or derive message
+   keys. MLS sender ratchets own this state.
+
+14.2. Receiving
+
+   On an A envelope, a client MUST:
+
+   1. Identify the local binding by Group ID.
+   2. Verify that the envelope arrived on the bound network and channel.
+   3. Deserialize the MLS message.
+   4. Process it through OpenMLS.
+   5. Require MLS validation before exposing plaintext.
+   6. Persist relevant updated state before acknowledging display.
+   7. Display the sender's verified device identity and optional local
+      nickname label.
+
+   An invalid, stale, duplicate, unauthenticated, or undecryptable MLS
+   object MUST NOT be displayed as plaintext.
+
+15. Proposals, Commits, and Epochs
+
+15.1. Proposal Delivery
+
+   A client MAY send MLS proposals as type P objects. A receiver MUST
+   store only proposals accepted by OpenMLS and associated with the current
+   MLS epoch.
+
+15.2. Commit Delivery
+
+   A Commit MUST be sent as a type C object. A client MUST process a
+   received Commit through OpenMLS staging APIs before changing active
+   group state.
+
+   A client MUST inspect the staged Commit according to its local policy
+   before merging it. At minimum it MUST validate:
+
+   - expected Group ID;
+   - current or processable MLS epoch;
+   - cryptographic authorization by MLS;
+   - identities of added devices;
+   - identities of removed devices;
+   - unsupported extension or ciphersuite changes;
+   - local policy governing administrative operations.
+
+15.3. Commit Ordering
+
+   MLS requires a total order of Commits. Plain IRC does not provide a
+   universally reliable global ordering guarantee across all clients.
+
+   FCEP-2 therefore defines the following rule:
+
+   - The first valid Commit for the local current epoch that passes local
+     policy and MLS processing becomes the locally selected successor.
+   - Competing Commits based on the same prior epoch MUST be retained as
+     conflict evidence but MUST NOT be merged automatically.
+   - A client detecting a competing Commit MUST suspend automatic sending
+     in that group and request synchronization.
+   - An implementation SHOULD display a visible "MLS commit conflict"
+     warning requiring resolution or a fresh group epoch.
+
+   A relay bot MAY provide an ordered commit log. Such a bot improves
+   availability but is not a cryptographic trust anchor; invalid ordering
+   or forged data is detected by MLS and binding validation.
+
+15.4. Epoch Transition
+
+   Each merged MLS Commit creates a new MLS epoch. A client MUST associate
+   every decrypted application message with its MLS epoch for diagnostics.
+
+   FCEP-2 MUST NOT invent an independent FCEP epoch counter. The MLS epoch
+   is authoritative.
+
+16. Member Removal and Device Revocation
+
+16.1. Removal
+
+   To remove a device, an authorized group member creates an MLS Remove
+   proposal and Commit. Remaining members merge the Commit and move to a
+   new MLS epoch.
+
+   A client MUST NOT infer cryptographic removal from IRC PART, QUIT, KICK,
+   nickname change, or timeout.
+
+16.2. Operational Policy
+
+   A FCEP-2 UI MAY offer advisory actions when a member leaves IRC, but
+   MUST require an explicit confirmation before creating a Remove Commit.
+
+   A device removal affects future MLS epochs only. It cannot revoke
+   plaintext, message keys, or group state already acquired by the removed
+   device.
+
+16.3. Compromise
+
+   On suspected device compromise, users SHOULD remove the device promptly,
+   publish replacement KeyPackages for a new device identity, and verify
+   the replacement fingerprint out of band.
+
+17. Delivery Ordering and Concurrency
+
+17.1. Concurrent Application Messages
+
+   Multiple members MAY send application messages concurrently. MLS sender
+   ratchets, not FCEP-2, handle distinct sender message generations.
+
+17.2. Reordering
+
+   FCEP-2 implementations SHOULD configure the OpenMLS sender ratchet to
+   tolerate expected IRC reordering. The exact tolerance is a local
+   implementation parameter.
+
+   The default profile is:
+
+      maximum forward sender-ratchet distance: 2,000 messages
+      maximum retained skipped message keys:       20 keys per sender
+
+   Implementations MAY select stricter limits for memory-constrained
+   environments. Limits MUST be documented to the user.
+
+17.3. Duplicate Objects
+
+   A receiver MUST treat duplicate application messages, proposals, and
+   commits as non-fatal. It MUST rely on MLS state and transport tracking
+   to suppress duplicate user-visible plaintext.
+
+18. Resynchronization and Offline Recovery
+
+18.1. Need for Synchronization
+
+   A member may miss proposals, commits, or application messages while
+   offline. MLS can protect the group state but does not require IRC to
+   retain missed packets.
+
+18.2. Sync Request
+
+   A member that cannot process an object because it lacks a prior Commit
+   SHOULD send:
+
+      NOTICE <peer-or-relay> :+FCEP2 R <request-id>
+         SYNC <group-id> <known-epoch>
+
+   A responder MAY return a sequence of missing C envelopes as S objects.
+
+18.3. Relay Bot
+
+   Deployments SHOULD support an optional FCEP-2 relay bot. The bot MAY
+   store opaque serialized objects indexed by Group ID, epoch and object
+   identifier.
+
+   The bot MUST NOT require MLS private keys. It MUST NOT be trusted for
+   confidentiality, authorization, object validity, identity, or ordering.
+   Clients MUST cryptographically validate all retrieved material.
+
+18.4. State Loss
+
+   A device that loses local MLS group state MUST NOT attempt to reconstruct
+   state from arbitrary old application messages.
+
+   It MUST either:
+
+   - recover an authenticated encrypted local backup;
+   - receive a valid new Welcome through a new Add Commit; or
+   - be treated as a newly added device with a new KeyPackage.
+
+19. State Persistence
+
+19.1. General Rule
+
+   Group state, key material, KeyPackage private material, pending commits,
+   and transport metadata are security-sensitive state.
+
+   A client MUST persist state changes atomically before exposing a state
+   transition to the network whenever rollback could cause loss of MLS
+   state, incorrect ratchet use, or inconsistent membership.
+
+19.2. Required Persisted Fields
+
+   For every group binding, a client MUST persist:
+
+   - FCEP-2 protocol version;
+   - network identifier;
+   - canonical channel name;
+   - MLS Group ID;
+   - serialized OpenMLS MlsGroup state;
+   - local device identifier and credential reference;
+   - local trust data for known member devices;
+   - last synchronization metadata;
+   - unresolved commit conflict metadata;
+   - state schema version.
+
+19.3. Atomic Write Procedure
+
+   A file-backed implementation SHOULD:
+
+   1. Encrypt the new serialized state.
+   2. Write it to a uniquely named temporary file.
+   3. Flush file contents.
+   4. Atomically replace the old state file.
+   5. Flush the containing directory where supported.
+
+   A failed persistence operation MUST prevent sending a state-changing MLS
+   object. A client MUST surface this failure to the user.
+
+20. Rust and OpenMLS Implementation Profile
+
+20.1. Provider
+
+   A Rust implementation SHOULD use:
+
+      openmls
+      openmls_rust_crypto
+      openmls_basic_credential
+      tls_codec
+      serde
+      secrecy
+      zeroize
+
+   OpenMLS operations require an OpenMlsProvider implementing cryptographic
+   randomness, cryptographic primitives and state storage.
+
+20.2. Group Ownership
+
+   Each MlsGroup MUST have exactly one logical state owner at a time.
+
+   An implementation SHOULD model every group as an actor or dedicated
+   worker with a serialized command queue. A shared Mutex<MlsGroup> is
+   acceptable only if it guarantees equivalent serialization over:
+
+   - process incoming messages;
+   - create application messages;
+   - create proposals;
+   - create and merge commits;
+   - persist state;
+   - emit IRC objects.
+
+20.3. API Boundary
+
+   The FCEP-2 core SHOULD expose a safe API such as:
+
+      create_group(binding, invited_devices)
+      process_irc_object(source, channel, envelope)
+      send_application(group_id, plaintext)
+      request_keypackage(device)
+      add_device(group_id, keypackage)
+      remove_device(group_id, leaf_index)
+      synchronize(group_id)
+      export_encrypted_backup(group_id)
+
+   mIRC hook code, raw Win32 DLL code, and unsafe function-pointer handling
+   MUST remain outside the MLS state and protocol core.
+
+21. Reference Data Structures
+
+   The following Rust-like structures are informational:
+
+   ```rust
+   pub struct GroupBinding {
+       pub protocol_version: u16,
+       pub network_id: [u8; 32],
+       pub canonical_channel: String,
+       pub mls_group_id: Vec<u8>,
+       pub creator_fingerprint: [u8; 32],
+       pub created_at_unix: i64,
+   }
+
+   pub struct DeviceIdentity {
+       pub device_id: [u8; 16],
+       pub credential_fingerprint: [u8; 32],
+       pub display_label: String,
+       pub trust: TrustState,
+   }
+
+   pub enum TrustState {
+       Unknown,
+       Tofu,
+       Verified,
+       Changed,
+       Revoked,
+   }
+
+   pub struct PersistedGroup {
+       pub binding: GroupBinding,
+       pub serialized_mls_group: Vec<u8>,
+       pub local_device_id: [u8; 16],
+       pub known_devices: Vec<DeviceIdentity>,
+       pub conflict: Option<CommitConflict>,
+       pub schema_version: u32,
+   }
+
+   pub struct FragmentAssembly {
+       pub source_id: String,
+       pub object_id: [u8; 16],
+       pub original_type: u8,
+       pub count: u16,
+       pub received: Vec<Option<Vec<u8>>>,
+       pub created_at_unix: i64,
+   }
+   ```
+
+22. Client Behaviour
+
+22.1. Encryption Policy
+
+   A client MAY operate in one of these modes per IRC channel:
+
+      Disabled:
+         No FCEP processing.
+
+      Opportunistic:
+         Decrypt valid FCEP-2 messages where possible, but allow plaintext.
+
+      Required:
+         Warn or block plaintext transmission after a valid FCEP-2 binding
+         has been established.
+
+   A client MUST clearly label plaintext, undecryptable FCEP-2 objects,
+   FCEP-1 legacy ciphertext, and verified FCEP-2 plaintext differently.
+
+22.2. Unknown Group Objects
+
+   A received object for an unknown Group ID MUST NOT create a binding
+   silently. The client SHOULD display an invitation or diagnostic event,
+   but MUST require a valid Welcome and user or policy approval before
+   persisting a new group binding.
+
+22.3. Diagnostics
+
+   A client SHOULD log, without logging secrets or plaintext:
+
+   - Group ID fingerprint;
+   - MLS epoch;
+   - sender device fingerprint;
+   - message type;
+   - validation outcome;
+   - state persistence failures;
+   - fragment abuse;
+   - KeyPackage validation failures;
+   - competing commit conflicts.
+
+23. Security Considerations
+
+23.1. MLS Is Mandatory for Group Crypto
+
+   FCEP-2 security depends on correct use of RFC 9420 and OpenMLS.
+   Implementations MUST NOT combine MLS application encryption with a
+   separate FCEP symmetric channel key or custom ratchet.
+
+23.2. Post-Compromise Security
+
+   FCEP-2 obtains post-compromise security only through MLS commits that
+   introduce fresh secret material as defined by MLS. It MUST NOT claim that
+   a public nonce or a symmetric HKDF evolution alone restores secrecy after
+   compromise.
+
+23.3. Identity Verification
+
+   IRC account names, SASL authentication, TLS server identity, and nickname
+   checks are useful defense in depth but are not replacements for verifying
+   MLS signing-key fingerprints.
+
+23.4. Commit Conflicts
+
+   IRC cannot be assumed to provide a globally consistent total order of
+   Commit messages. Competing commits are a protocol-level availability
+   incident. Implementations MUST detect and surface them, and MUST NOT
+   silently select a branch based solely on arrival timing without retaining
+   diagnostics and initiating synchronization.
+
+23.5. Replay and Rollback
+
+   MLS validates epochs, sender generations, authentication tags and group
+   state. FCEP-2 transport identifiers and fragment bounds supplement this
+   validation but do not replace it.
+
+   Persisted state MUST be rollback-resistant where possible. A local
+   attacker capable of restoring old encrypted state may induce availability
+   failures or state inconsistency.
+
+23.6. Denial of Service
+
+   Attackers can send arbitrary IRC traffic. Clients MUST impose limits on:
+
+   - line parsing;
+   - base64 decoding;
+   - fragment count and size;
+   - concurrent assemblies;
+   - KeyPackage cache size;
+   - pending proposal count;
+   - synchronization response size;
+   - disk usage for opaque relay data.
+
+23.7. Metadata
+
+   IRC servers observe the sender, destination channel or nickname, timing,
+   packet length, presence, and activity. FCEP-2 does not hide this metadata.
+   Padding MAY reduce plaintext-length leakage but does not hide traffic
+   analysis.
+
+23.8. Endpoint Security
+
+   MLS cannot protect plaintext after it is displayed, copied, logged,
+   screen-captured, or accessed by malware on a member device. Secure local
+   storage and device hygiene remain required.
+
+24. Migration from FCEP-1
+
+24.1. Separation
+
+   FCEP-1 and FCEP-2 MUST use distinct message prefixes:
+
+      FCEP-1: +FiSH-CEP-KEY and +FiSH
+      FCEP-2: +FCEP2
+
+   A client MUST NOT attempt to decode FCEP-1 material as FCEP-2 MLS
+   material or vice versa.
+
+24.2. Migration Procedure
+
+   To migrate a channel:
+
+   1. Create a new FCEP-2 MLS group with a fresh Group ID.
+   2. Obtain verified KeyPackages for all participating devices.
+   3. Add the devices through MLS and deliver their Welcomes.
+   4. Confirm that all intended devices reached the new MLS epoch.
+   5. Announce the FCEP-2 transition in the old channel policy.
+   6. Disable FCEP-1 encryption for future traffic.
+   7. Securely erase obsolete FCEP-1 channel keys where operationally safe.
+
+   FCEP-1 history remains protected only by its original security properties;
+   migration does not retroactively improve it.
+
+25. IANA Considerations
+
+   This document has no IANA actions.
+
+References
+
+   [RFC2119] Bradner, S., "Key words for use in RFCs to Indicate
+             Requirement Levels", RFC 2119.
+
+   [RFC4648] Josefsson, S., "The Base16, Base32, and Base64 Data
+             Encodings", RFC 4648.
+
+   [RFC8174] Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119
+             Key Words", RFC 8174.
+
+   [RFC9420] Barnes, R., et al., "The Messaging Layer Security (MLS)
+             Protocol", RFC 9420.
+
+   [RFC2812] Kalt, C., "Internet Relay Chat: Client Protocol", RFC 2812.

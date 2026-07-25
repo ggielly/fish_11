@@ -88,20 +88,22 @@ dll_function_identifier!(FiSH11_DecryptMsg, data, {
         } else {
             // Use the ratchet-based decryption (FCEP-1 with forward secrecy)
             let encrypted_bytes = crate::utils::base64_decode(encrypted_message)?;
-            if encrypted_bytes.len() < 12 {
+            if encrypted_bytes.len() < 24 {
                 return Err(DllError::DecryptionFailed {
                     context: "payload validation".to_string(),
                     cause: "Encrypted payload too short to contain a nonce".to_string(),
                 });
             }
-            let nonce: [u8; 12] =
-                encrypted_bytes[..12].try_into().map_err(|_| DllError::DecryptionFailed {
+            let nonce: [u8; 24] =
+                encrypted_bytes[..24].try_into().map_err(|_| DllError::DecryptionFailed {
                     context: "nonce extraction".to_string(),
-                    cause: "Could not convert slice to 12-byte nonce array".to_string(),
+                    cause: "Could not convert slice to 24-byte nonce array".to_string(),
                 })?;
 
-            // Anti-replay check (read-only)
-            if crypto::chacha20::is_nonce_replay(&nonce)? {
+            // Anti-replay check using per-channel nonce cache (RFC FCEP-1 §6.3)
+            // The global NONCE_CACHE is NOT used here — we use the channel-partitioned
+            // cache to prevent cross-channel nonce collision blocking legitimate messages.
+            if config::state_management::check_nonce(target, &nonce)? {
                 return Err(DllError::ReplayAttackDetected { channel: target.to_string() });
             }
 
@@ -167,11 +169,13 @@ dll_function_identifier!(FiSH11_DecryptMsg, data, {
             })?;
 
             if let Some(plaintext) = decrypted {
-                // Add nonce to cache ONLY after successful decryption
-                crypto::chacha20::mark_nonce_seen(&nonce)?;
-                // Config automatic save is not triggered for nonce cache as it's memory-only/lazy_static in chacha20.rs
+                // Add nonce to per-channel cache ONLY after successful decryption
+                // Using channel-partitioned cache per RFC FCEP-1 §6.3
+                config::state_management::add_nonce(target, nonce)?;
                 #[cfg(debug_assertions)]
                 log_debug!("Successfully decrypted ratchet message for {}", target);
+
+                config::increment_decryption_counter();
 
                 // SECURITY: Clear the source buffer from memory
                 crate::utils::secure_clear_string(&mut input_str);
@@ -219,6 +223,8 @@ dll_function_identifier!(FiSH11_DecryptMsg, data, {
     // Log decrypted content if DEBUG flag is enabled for sensitive content
     #[cfg(debug_assertions)]
     log_debug!("DLL_Interface: decrypted private message for '{}': '{}'", nickname, &decrypted);
+
+    config::increment_decryption_counter();
 
     //log_info!("Successfully decrypted message for {}", nickname);
 
@@ -410,5 +416,13 @@ mod tests {
         if let Some(stripped) = parts[1].strip_prefix("+FiSH ") {
             assert_eq!(stripped, "test_encrypted_data");
         }
+    }
+
+    #[test]
+    fn test_decryption_counter_increments() {
+        let before = config::get_decryption_count().unwrap_or(0);
+        config::increment_decryption_counter();
+        let after = config::get_decryption_count().unwrap_or(0);
+        assert!(after > before);
     }
 }

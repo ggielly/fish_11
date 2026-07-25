@@ -6,6 +6,7 @@ pub use self::chacha20::*;
 use crate::error::Result;
 pub mod blowfish;
 pub mod dh1080;
+// pub mod aes_kw; // TODO: fix imports before enabling (aes_keywrap API changes)
 
 /// Trait for message encryption and decryption
 pub trait MessageCipher: Any + Send + Sync {

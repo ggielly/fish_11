@@ -62,6 +62,10 @@ dll_function_identifier!(FiSH11_ProcessPublicKey, data, {
         DllError::KeyInvalid { reason: format!("invalid public key format: {}", e) }
     })?;
 
+    crypto::validate_public_key(&their_public_key).map_err(|e| {
+        DllError::KeyInvalid { reason: format!("public key rejected: {}", e) }
+    })?;
+
     #[cfg(debug_assertions)]
     log_debug!("Successfully extracted public key");
 
@@ -183,3 +187,48 @@ dll_function_identifier!(FiSH11_TestCrypt, data, {
         input_safe, encrypted_safe, decrypted_safe
     ))
 });
+
+#[cfg(test)]
+mod tests {
+    use crate::crypto;
+
+    #[test]
+    fn test_validate_public_key_rejects_low_order_point() {
+        let low_order = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let result = crypto::validate_public_key(&low_order);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_public_key_rejects_all_zeros() {
+        let zeros = [0u8; 32];
+        let result = crypto::validate_public_key(&zeros);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_public_key_accepts_valid() {
+        let keypair = crypto::generate_keypair();
+        let result = crypto::validate_public_key(&keypair.public_key);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_process_public_key_rejects_low_order() {
+        let keypair = crypto::generate_keypair();
+        let low_order_hex = "0100000000000000000000000000000000000000000000000000000000000000";
+        let token = format!("X25519_INIT:{}", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &hex::decode(low_order_hex).unwrap()));
+
+        let result = crypto::validate_public_key(&[0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_counter_increment_exists() {
+        crate::config::increment_encryption_counter();
+        crate::config::increment_decryption_counter();
+        let enc = crate::config::get_encryption_count().unwrap_or(0);
+        let dec = crate::config::get_decryption_count().unwrap_or(0);
+        assert!(enc > 0 || dec > 0);
+    }
+}

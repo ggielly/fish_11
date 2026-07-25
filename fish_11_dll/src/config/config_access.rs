@@ -1,6 +1,6 @@
 //! Configuration access patterns for FiSH 11
 
-use parking_lot::MutexGuard;
+use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 
 use crate::config::CONFIG;
 use crate::config::file_storage::save_config;
@@ -10,12 +10,12 @@ use crate::{log_debug, log_error, log_info, log_warn};
 
 /// A read-only guard for the configuration
 pub struct ConfigReadGuard<'a> {
-    guard: MutexGuard<'a, FishConfig>,
+    guard: RwLockReadGuard<'a, FishConfig>,
 }
 
 /// A read-write guard for the configuration
 pub struct ConfigWriteGuard<'a> {
-    guard: MutexGuard<'a, FishConfig>,
+    guard: RwLockWriteGuard<'a, FishConfig>,
     modified: bool,
 }
 
@@ -88,13 +88,12 @@ impl<'a> Drop for ConfigWriteGuard<'a> {
 
 /// Get read-only access to the configuration
 pub fn read_config() -> Result<ConfigReadGuard<'static>> {
-    let guard = CONFIG.lock();
+    let guard = CONFIG.read();
     Ok(ConfigReadGuard { guard })
 }
 
-/// Get read-write access to the configuration
 pub fn write_config() -> Result<ConfigWriteGuard<'static>> {
-    let guard = CONFIG.lock();
+    let guard = CONFIG.write();
     Ok(ConfigWriteGuard { guard, modified: false })
 }
 pub fn with_config<F, T>(f: F) -> Result<T>
@@ -104,9 +103,7 @@ where
     #[cfg(debug_assertions)]
     log_info!("with_config : attempting to acquire read lock on CONFIG...");
 
-    // Use direct lock acquisition instead of try_lock loop
-    // parking_lot's Mutex::lock() is blocking and fair
-    let guard = CONFIG.lock();
+    let guard = CONFIG.read();
 
     #[cfg(debug_assertions)]
     {
@@ -115,7 +112,7 @@ where
         let now = chrono::Local::now();
         #[cfg(debug_assertions)]
         log_debug!(
-            "with_config: acquired lock - pid={}, tid={:?}, time={}",
+            "with_config: acquired read lock - pid={}, tid={:?}, time={}",
             pid,
             tid,
             now.to_rfc3339()
@@ -126,7 +123,6 @@ where
     f(guard.config())
 }
 
-/// Run a function with read-write access to the configuration
 pub fn with_config_mut<F, T>(f: F) -> Result<T>
 where
     F: FnOnce(&mut FishConfig) -> Result<T>,
@@ -134,9 +130,7 @@ where
     #[cfg(debug_assertions)]
     log_info!("with_config_mut : attempting to acquire write lock on CONFIG...");
 
-    // Use direct lock acquisition instead of try_lock loop
-    // parking_lot's Mutex::lock() is blocking and fair
-    let guard = CONFIG.lock();
+    let guard = CONFIG.write();
 
     #[cfg(debug_assertions)]
     {
@@ -146,7 +140,7 @@ where
 
         #[cfg(debug_assertions)]
         log_debug!(
-            "with_config_mut: acquired lock - pid={}, tid={:?}, time={}",
+            "with_config_mut: acquired write lock - pid={}, tid={:?}, time={}",
             pid,
             tid,
             now.to_rfc3339()

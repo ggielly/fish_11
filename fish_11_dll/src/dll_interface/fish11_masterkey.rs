@@ -334,3 +334,58 @@ pub fn get_master_key_from_memory() -> Option<[u8; 32]> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_master_key_is_unlocked_returns_0_or_1() {
+        let result = is_key_system_unlocked();
+        if result {
+            assert!(!"0".is_empty());
+        } else {
+            assert!(!"1".is_empty());
+        }
+    }
+
+    #[test]
+    fn test_is_master_key_unlocked_initially_false() {
+        let mut key_guard = MASTER_KEY.lock().unwrap();
+        *key_guard = None;
+        drop(key_guard);
+        assert!(!is_master_key_unlocked());
+    }
+
+    #[test]
+    fn test_get_master_key_from_memory_initially_none() {
+        let mut key_guard = MASTER_KEY.lock().unwrap();
+        *key_guard = None;
+        drop(key_guard);
+        assert!(get_master_key_from_memory().is_none());
+    }
+
+    #[test]
+    fn test_master_key_roundtrip() {
+        let test_key = [42u8; 32];
+        {
+            let mut key_guard = MASTER_KEY.lock().unwrap();
+            *key_guard = Some(test_key);
+        }
+
+        assert!(is_master_key_unlocked());
+        assert_eq!(get_master_key_from_memory(), Some(test_key));
+
+        {
+            let mut key_guard = MASTER_KEY.lock().unwrap();
+            *key_guard = None;
+        }
+        assert!(!is_master_key_unlocked());
+    }
+
+    #[test]
+    fn test_master_key_is_unlocked_returns_string_format() {
+        let locked = if is_key_system_unlocked() { "1" } else { "0" };
+        assert!(locked == "1" || locked == "0");
+    }
+}

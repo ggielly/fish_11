@@ -39,3 +39,4 @@ fish_11_dll/fish_11.ini
 
 #Ignore vscode AI rules
 .github\instructions\codacy.instructions.md
+.mimocode/
