@@ -1,0 +1,58 @@
+# FiSH-11 FCEP-2 IRC Synchronization & Relay Bot
+# Default configuration file
+#
+# Usage:
+#   .\fish_11_relay.exe --config docs\fish_relay.toml run
+#
+# All fields are required unless marked optional.
+
+[server]
+# IRC server address (FQDN or IP).
+address = "irc.libera.chat"
+
+# Connection port.
+# 6697 = TLS, 6667 = plaintext.
+port = 6697
+
+# Enable TLS (true = 6697, false = 6667).
+use_tls = true
+
+# Accept invalid/self-signed TLS certificates (default: false).
+# Equivalent to the --insecure CLI flag. CLI flag takes precedence.
+danger_accept_invalid_certs = false
+
+# Bot nickname.
+nickname = "FiSH_Relay"
+
+# Username (user).
+username = "fishbot"
+
+# Real name shown in WHOIS.
+realname = "FiSH-11 FCEP-2 Synchronization Relay"
+
+# List of channels to join on connect.
+channels = ["#fish11"]
+
+# Server password (SASL / PASS) — optional.
+# Leave unset for no authentication.
+# password = "my_password"
+
+[relay]
+# Maximum number of KeyPackages stored per device.
+# Older ones are purged when this limit is exceeded.
+max_keypackages_per_device = 20
+
+# Retention duration for Welcome messages (in days).
+# Expired entries are purged periodically.
+welcome_ttl_days = 14
+
+# Maximum number of Commits kept in history.
+commit_history_limit = 500
+
+# Rate limit for sending messages (messages per second).
+# Minimum: 1.
+rate_limit_per_sec = 4
+
+[storage]
+# Persistent storage directory (relay store + logs).
+data_dir = "./relay_data"
