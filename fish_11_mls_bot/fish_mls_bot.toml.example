@@ -1,0 +1,43 @@
+# FiSH-11 FCEP-2 MLS Test Bot Configuration
+# Copy this file to fish_mls_bot.toml and customise.
+
+[server]
+address = "irc.libera.chat"
+port = 6697
+use_tls = true
+nickname = "MLS_Bot"
+username = "mlsbot"
+realname = "FiSH-11 FCEP-2 MLS Test Bot"
+channels = ["#fish11-test"]
+# password = "your_nickserv_password"
+
+[mls]
+# Operational mode: "relay" (store-and-forward), "full" (full MLS participant),
+# or "master-key" (key distribution authority per FCEP-2 §11.4)
+mode = "relay"
+max_keypackages = 20
+welcome_ttl_days = 14
+commit_history_limit = 500
+rate_limit_per_sec = 4
+
+[backlog]
+enabled = true
+listen_port = 31337
+bind_address = "0.0.0.0"
+# External (public) IP address for NAT traversal. Leave empty for auto.
+external_address = ""
+peer_timeout_secs = 30
+max_peers = 64
+
+[database]
+path = "./mls_bot_data"
+# REQUIRED: 32-byte encryption key for the NoSQL database.
+# Can be 32 raw characters or 64 hex characters.
+# CHANGE THIS BEFORE USING IN PRODUCTION!
+encryption_key = "CHANGE_ME_32_BYTES_SECRET_KEY!!"
+auto_compact = true
+
+[logging]
+level = "info"
+# Optional log file path. Empty = stderr only.
+file = ""

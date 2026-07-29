@@ -1,0 +1,70 @@
+[package]
+name = "fish_11_mls_bot"
+version = "11.26.0"
+edition = "2021"
+description = "FiSH_11 - FCEP-2 MLS IRC test bot with backlog and encrypted NoSQL storage"
+license = "GPL-3.0-or-later"
+authors = ["GuY"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# IRC client (same version as fish_11_relay)
+irc = "1.1.0"
+
+# Async stream processing
+futures = "0.3"
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# TOML configuration (same version as fish_11_relay: 0.8)
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging (structured, same as fish_11_relay)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2"
+
+# Encoding
+base64 = "0.22"
+hex = "0.4"
+
+# DLL loading (same as fish_11_relay)
+libloading = "0.8"
+
+# Local DLL crate for integrated (non-Windows) mode
+fish_11 = { path = "../fish_11_dll", optional = true }
+
+# Embedded NoSQL database
+sled = "0.34"
+
+# Encryption for database at-rest (already used in fish_11_dll)
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# IPC for daemon mode
+# (cross-platform daemonization is minimal - we use a simple fork-detach on unix)
+
+[target.'cfg(windows)'.dependencies]
+# Windows-specific: Named pipe or event for daemon signal
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Console",
+] }
+
+[features]
+default = []
+# Link directly against fish_11_dll without external DLL loading
+integrated = ["fish_11"]
