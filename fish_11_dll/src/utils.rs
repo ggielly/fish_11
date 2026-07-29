@@ -124,7 +124,7 @@ fn is_socket_connected_windows() -> bool {
 ///
 /// - **Linux**: reads `/proc/net/tcp[6]` and `/proc/self/fd` (fully supported).
 /// - **FreeBSD / macOS / other**: `/proc` is not available. Returns `true` as a
-///   safe default — the caller uses this to decide whether to attempt network
+///   safe default : the caller uses this to decide whether to attempt network
 ///   operations, and a false negative (saying "not connected" when we are) is
 ///   worse than a false positive.
 fn is_socket_connected_unix() -> bool {
@@ -133,7 +133,7 @@ fn is_socket_connected_unix() -> bool {
         return is_socket_connected_linux();
     }
 
-    // BSD / macOS / other: no /proc — assume connected (safe default)
+    // BSD / macOS / other: no /proc : assume connected (safe default)
     #[cfg(debug_assertions)]
     log_debug!("is_socket_connected: /proc not available, assuming connected (BSD/macOS)");
     true
@@ -238,19 +238,19 @@ pub fn normalize_nick(nick: &str) -> String {
 /// For non-channel targets (private messages), it returns the input untouched.
 ///
 /// This function handles complex cases including:
-/// - Multiple consecutive status prefixes: `@%+#test` → `#test`
-/// - Mixed status prefixes: `~@#test` → `#test`
-/// - Invalid/malformed prefixes: `@invalid` → `@invalid` (unchanged)
-/// - Empty or whitespace-only input: "   " → ""
+/// - Multiple consecutive status prefixes: `@%+#test` => `#test`
+/// - Mixed status prefixes: `~@#test` => `#test`
+/// - Invalid/malformed prefixes: `@invalid` => `@invalid` (unchanged)
+/// - Empty or whitespace-only input: "   " => ""
 ///
 /// Examples:
-/// - `@#fish_11` → `#fish_11`
-/// - `@%+#test` → `#test`
-/// - `~@#channel` → `#channel`
-/// - `&fish_11` → `&fish_11`
-/// - `bob` → `bob`
-/// - `@invalid` → `@invalid`
-/// - `   @#test   ` → `#test`
+/// - `@#fish_11` => `#fish_11`
+/// - `@%+#test` => `#test`
+/// - `~@#channel` => `#channel`
+/// - `&fish_11` => `&fish_11`
+/// - `bob` => `bob`
+/// - `@invalid` => `@invalid`
+/// - `   @#test   ` => `#test`
 pub fn normalize_target(target: &str) -> &str {
     let trimmed = target.trim();
 

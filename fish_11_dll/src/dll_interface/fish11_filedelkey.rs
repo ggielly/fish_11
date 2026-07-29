@@ -12,11 +12,8 @@ dll_function_identifier!(FiSH11_FileDelKey, data, {
     let input_trimmed = input.trim();
 
     let parts: Vec<&str> = input_trimmed.splitn(2, ' ').collect();
-    let (network, nickname_raw) = if parts.len() == 2 {
-        (parts[0], parts[1])
-    } else {
-        ("default", parts[0])
-    };
+    let (network, nickname_raw) =
+        if parts.len() == 2 { (parts[0], parts[1]) } else { ("default", parts[0]) };
 
     let normalized_target = crate::utils::normalize_target(nickname_raw);
     let nickname = normalize_nick(normalized_target);

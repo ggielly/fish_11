@@ -13,6 +13,24 @@ menu channel {
   .Add a channel key encryption
   ..Manual key : fish11_set_manual_key_dialog $chan
   ..FCEP-1 key : fish11_init_fcep_dialog $chan
+  ..FCEP-2 group : fish11_fcep2_create_group $chan
+  .FCEP-2 group management
+  ..Show group state : fish11_fcep2_state $chan
+  ..Sync group : fish11_fcep2_sync $chan
+  ..Export group state : fish11_fcep2_export $chan
+  ..Import group state :{ var %data = $?="Enter base64 export data:" | if (%data) fish11_fcep2_import $chan %data }
+  ..-
+  ..Add member :{ var %kp = $?="Enter KeyPackage (base64):" | if (%kp) { fish11_fcep2_propose $chan ADD %kp | fish11_fcep2_commit $chan } }
+  ..Remove member :{ var %dev = $?="Enter device ID (hex):" | if (%dev) fish11_fcep2_remove $chan %dev }
+  ..-
+  ..Set encryption policy
+  ...Always encrypt : fish11_fcep2_policy $chan ALWAYS
+  ...Require all members : fish11_fcep2_policy $chan REQUIRE_ALL
+  ...Best effort : fish11_fcep2_policy $chan BEST_EFFORT
+  ...Disabled : fish11_fcep2_policy $chan DISABLED
+  ..-
+  ..Resolve conflict : fish11_fcep2_resolve $chan
+  ..Show diagnostics : fish11_fcep2_diag 10
   .Encrypt topic
   ..Enable topic encryption :{ fish11_SetChannelIniValue $chan encrypt_topic 1 | echo $color(Mode text) -at *** FiSH: topic encryption enabled for $chan }
   ..Disable topic encryption :{ fish11_SetChannelIniValue $chan encrypt_topic 0 | echo $color(Mode text) -at *** FiSH: topic encryption disabled for $chan }
@@ -156,6 +174,21 @@ menu status,channel,nicklist,query {
   .Core version :fish11_version
   .Injection version : fish11_injection_version
   .Help :fish11_help
+  .-
+  .FCEP-2 (MLS)
+  ..FCEP-2 Help :fish11_fcep2_help
+  ..Initialize device :fish11_fcep2_init_device
+  ..Generate KeyPackage :fish11_fcep2_gen_keypackage
+  ..Fill KeyPackage pool :fish11_fcep2_fill_pool
+  ..-
+  ..Create FCEP-2 group :{ if ($window($active).type == channel) { fish11_fcep2_create_group $active } else { echo $color(Mode text) -at *** FiSH_11: select a channel first } }
+  ..Show group state :{ if ($window($active).type == channel) { fish11_fcep2_state $active } else { echo $color(Mode text) -at *** FiSH_11: select a channel first } }
+  ..Sync group :{ if ($window($active).type == channel) { fish11_fcep2_sync $active } else { echo $color(Mode text) -at *** FiSH_11: select a channel first } }
+  ..-
+  ..Export group state :{ if ($window($active).type == channel) { fish11_fcep2_export $active } else { echo $color(Mode text) -at *** FiSH_11: select a channel first } }
+  ..Import group state :{ if ($window($active).type == channel) { var %data = $?="Enter base64 export data:" | if (%data) fish11_fcep2_import $active %data } else { echo $color(Mode text) -at *** FiSH_11: select a channel first } }
+  ..-
+  ..Show diagnostics :fish11_fcep2_diag 10
   .-
   .Master key
   ..Unlock master key :fish11_unlock

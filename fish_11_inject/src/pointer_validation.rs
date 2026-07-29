@@ -58,7 +58,7 @@ pub unsafe fn validate_function_pointer(
 /// Transmute a validated `FARPROC` into a concrete function type `T`.
 ///
 /// The caller must provide the concrete type `T` at the call site.
-/// The actual ABI/signature correctness is the caller's responsibility —
+/// The actual ABI/signature correctness is the caller's responsibility :
 /// this function only guarantees non-null and in-module-range.
 ///
 /// # Safety
@@ -72,7 +72,7 @@ pub unsafe fn unsafe_transmute_validated<T: Copy>(
     // 1. Validate the pointer
     validate_function_pointer(ptr, module)?;
 
-    // 2. Transmute — the caller chose T, so we trust it matches the symbol.
+    // 2. Transmute : the caller chose T, so we trust it matches the symbol.
     //    FARPROC is repr(Option<fn()>); unwrap is safe because validate
     //    already rejected None.
     //    `transmute_copy` is required here because `T` is generic and `transmute`

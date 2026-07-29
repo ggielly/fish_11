@@ -11,5 +11,3 @@ pub mod fish10_register_engine;
 pub mod fish10_setkey;
 pub mod fish10_settopic;
 pub mod fish10_settopicsetting;
-
-pub use fish10_settopic::{FiSH10_GetTopic, FiSH10_RemoveTopic, FiSH10_SetTopic};

@@ -7,8 +7,10 @@ Category: Standards Track                                      July 2026
 
 Status of This Memo
 
-   This document specifies a standards-track extension for FiSH-11 clients.
-   Distribution of this memo is unlimited.
+   This document specifies a prototype specification for FiSH-11 clients.
+   The architecture and protocol design are stable; the OpenMLS API
+   surface must be pinned to a specific release before publication as a
+   standards-track document. Distribution of this memo is unlimited.
 
 Abstract
 
@@ -44,21 +46,29 @@ Table of Contents
    6.  Identity and Device Model
    7.  Group Binding and Naming
    8.  Transport Envelope
+       8.4. IRC Line Budget
    9.  IRC Commands and Message Types
    10. Fragmentation and Reassembly
    11. KeyPackage Publication and Discovery
+       11.4. Relay Bot Requirements
    12. Group Creation
    13. Joining a Group
+       13.3. Late Join and Deferred Delivery
    14. Application Messages
    15. Proposals, Commits, and Epochs
+       15.1.1. Pending Proposal Cache
+       15.4. Commit Conflict Resolution
    16. Member Removal and Device Revocation
    17. Delivery Ordering and Concurrency
+       17.4. Optional Availability Signalling
    18. Resynchronization and Offline Recovery
    19. State Persistence
+       19.4. OpenMLS Storage Model
    20. Rust and OpenMLS Implementation Profile
    21. Reference Data Structures
    22. Client Behaviour
    23. Security Considerations
+       23.9. Transport Control Authentication
    24. Migration from FCEP-1
    25. IANA Considerations
 
@@ -282,12 +292,26 @@ Table of Contents
 
 7.2. Network Identifier
 
-   network_id MUST be a stable, locally configured identifier for the IRC
-   network. It SHOULD be derived from a canonical configured server name,
-   server port, TLS server certificate fingerprint where available, and a
-   locally assigned network label.
+   network_id is exactly 32 octets.
 
-   A raw server name alone MUST NOT be assumed globally unique.
+   On first configuration of an IRC network profile, the client MUST
+   generate network_id using a CSPRNG and persist it in the local
+   encrypted network profile.
+
+   network_id MUST NOT be automatically derived from a server hostname,
+   server IP address, TLS certificate, IRC network name, account name,
+   or nickname.
+
+   The client MAY store server hostnames, ports, TLS certificate
+   fingerprints, IRC network names, and SASL account names as separate
+   connection metadata. These values MAY be used to warn the user about
+   a changed server profile, but MUST NOT silently change network_id.
+
+   Exporting or importing an FCEP-2 group binding to another device MUST
+   export or import the associated network_id. A user MAY explicitly bind
+   an imported group to a distinct local IRC connection profile only
+   after confirmation that both profiles denote the same intended IRC
+   network.
 
 7.3. MLS Group ID
 
@@ -338,6 +362,30 @@ Table of Contents
    channel and network binding as application context when configuring
    group extensions or displaying messages, but acceptance of a message
    MUST depend on MLS Group ID and MLS validation, not only IRC location.
+
+8.4. IRC Line Budget
+
+   IRC transport lines are limited to 512 octets, including CRLF and
+   protocol overhead. FCEP-2 implementations MUST calculate the maximum
+   usable trailing-parameter size for each outgoing command.
+
+   A sender MUST fragment an object whenever its encoded envelope does
+   not fit entirely within the calculated limit.
+
+   A conforming implementation MUST support fragmented transmission and
+   reassembly for every FCEP-2 object type.
+
+   Implementations SHOULD target a maximum fragment payload of 320
+   octets. Implementations MUST NOT assume that more than 256 payload
+   octets are available on all compatible IRC transports.
+
+   A sender MUST NOT rely on server-side truncation, automatic splitting,
+   CTCP framing, multiline client extensions, or a specific IRCd
+   behavior.
+
+   A sender MUST rate-limit fragmented objects to no more than 4 fragments
+   per second per destination by default, unless the IRC network
+   capability or local configuration explicitly permits a higher value.
 
 9. IRC Commands and Message Types
 
@@ -406,15 +454,31 @@ Table of Contents
 
 10.2. Fragment Format
 
-   A fragmented object MUST use:
+   A fragmented FCEP-2 object MUST use:
 
-      +FCEP2 F <object-id> <index>/<count> <original-type> <data>
+      +FCEP2 F <object-id> <index> <count> <kind> <fragment>
 
-   <object-id> MUST be 128 random bits encoded as unpadded base64url.
-   <index> is zero-based.
-   <count> is the total number of fragments.
-   <original-type> is the type character of the reassembled envelope.
-   <data> is a base64url fragment.
+   object-id:
+      Exactly 16 random octets, encoded as 22 unpadded base64url
+      characters.
+
+   index:
+      A decimal integer in the inclusive range 0 through count - 1.
+
+   count:
+      A decimal integer in the inclusive range 1 through 256.
+
+   kind:
+      Exactly one of: A, P, C, W, K, R, S, or X. The kind value F
+      MUST NOT appear as a kind in a fragment envelope; it is reserved
+      exclusively for the fragment wrapper itself.
+
+   fragment:
+      A non-empty unpadded base64url string.
+
+   The receiver MUST reject a fragment whose kind is F, whose object-id
+   is malformed, whose index is not less than count, or whose count
+   differs from a previously accepted fragment of the same assembly.
 
 10.3. Fragment Rules
 
@@ -478,6 +542,45 @@ Table of Contents
    An implementation MUST reject expired, malformed, unsupported, or
    identity-inconsistent KeyPackages.
 
+11.4. Relay Bot Requirements
+
+   An FCEP-2 relay bot is an optional availability service. It MUST NOT
+   possess MLS private keys, private signing keys, plaintext application
+   data, or decrypted MLS group state.
+
+   A relay MAY store the following opaque or public objects:
+
+   - serialized public KeyPackages;
+   - encrypted or opaque Welcome envelopes addressed to a device;
+   - serialized Proposals and Commits;
+   - synchronization records;
+   - opaque fragmented FCEP-2 objects.
+
+   The relay MUST treat KeyPackages as public data. It MUST NOT claim
+   that possession of a KeyPackage authenticates a human or an IRC
+   nickname.
+
+   The relay SHOULD retain unconsumed KeyPackages until the earliest of:
+   - the KeyPackage expiration time;
+   - explicit withdrawal by its owning device;
+   - 30 days after publication.
+
+   The relay SHOULD retain Welcomes until acknowledged by the recipient
+   or for no more than 14 days. It SHOULD retain Commit and
+   synchronization objects for no more than 30 days, subject to
+   configurable quotas.
+
+   A client MUST cryptographically validate all relay-delivered objects.
+   A client MUST treat relay timestamps, ordering, availability, deletion
+   status, and identity claims as advisory only.
+
+   The relay identity MUST be configured by a stable endpoint identifier
+   and, when TLS is used, authenticated using normal transport
+   validation. A client MAY pin the relay TLS certificate or its
+   application signing fingerprint. Failure to authenticate a relay MUST
+   NOT be interpreted as an MLS identity failure, but SHOULD disable
+   automatic synchronization through that relay.
+
 12. Group Creation
 
 12.1. Initiator
@@ -531,6 +634,29 @@ Table of Contents
    opaque relay mailbox. It MUST NOT be broadcast as a normal channel
    PRIVMSG.
 
+13.3. Late Join and Deferred Delivery
+
+   A device that has not yet successfully processed a valid Welcome for a
+   Group ID MUST NOT process Application, Proposal, or Commit objects for
+   that Group ID.
+
+   It MAY retain such objects in a bounded deferred-delivery cache for up
+   to 10 minutes while requesting its Welcome. The cache MUST be limited
+   to 256 objects and 2 MiB per unknown Group ID.
+
+   A device that was previously joined but is missing one or more prior
+   Commits MUST request synchronization from a peer or relay before
+   attempting to process later objects.
+
+   After processing a valid Welcome or reconstructing a missing Commit
+   chain, a client MUST process deferred objects in deterministic IRC
+   receipt order. Objects that remain invalid after state recovery MUST
+   be discarded and logged.
+
+   A device that has lost its local MLS state MUST be treated as a new
+   device. It MUST NOT reconstruct membership solely from deferred
+   Application or Commit messages.
+
 14. Application Messages
 
 14.1. Sending
@@ -572,6 +698,24 @@ Table of Contents
    store only proposals accepted by OpenMLS and associated with the current
    MLS epoch.
 
+15.1.1. Pending Proposal Cache
+
+   A client MAY retain MLS proposals for its current epoch only.
+
+   Pending proposals MUST be indexed by their authenticated MLS proposal
+   reference and current MLS epoch. A client MUST discard pending
+   proposals when any of the following occurs:
+
+   - the group moves to a new epoch;
+   - the proposal is consumed by a merged Commit;
+   - the proposal fails MLS validation;
+   - the proposal is older than 15 minutes;
+   - the proposal cache exceeds 128 objects or 512 KiB.
+
+   A client MUST NOT apply a proposal merely because it originated from
+   an IRC nickname or relay. It MUST process the proposal through OpenMLS
+   and its local group policy.
+
 15.2. Commit Delivery
 
    A Commit MUST be sent as a type C object. A client MUST process a
@@ -609,7 +753,42 @@ Table of Contents
    availability but is not a cryptographic trust anchor; invalid ordering
    or forged data is detected by MLS and binding validation.
 
-15.4. Epoch Transition
+15.4. Commit Conflict Resolution
+
+   A competing Commit exists when two different valid MLS Commits are
+   processed or observed as successors to the same prior group epoch.
+
+   On detecting a competing Commit, a client MUST enter CommitConflict
+   state for that group. While in CommitConflict state, the client:
+
+   - MUST NOT create application messages;
+   - MUST NOT create or merge locally initiated commits;
+   - MAY continue to display already validated messages from its selected
+     branch, clearly marked with the selected epoch;
+   - MUST preserve the competing Commit objects and relevant source,
+     timestamp, and binding diagnostics;
+   - SHOULD send a SYNC request to configured peers or a relay.
+
+   A client MUST display a persistent user-visible warning identifying
+   the affected group, old epoch, and conflicting successor commits.
+
+   If no consistent successor chain is obtained within 60 seconds, the
+   client MUST remain in CommitConflict state. It MUST NOT choose another
+   branch solely because of later IRC delivery order.
+
+   FCEP-2 version 2.0 defines manual resolution as mandatory. A user may:
+
+   - select one locally validated branch after inspecting the conflict;
+   - restore an authenticated prior backup and rejoin a selected branch;
+   - create a replacement MLS group and invite the intended members.
+
+   An implementation MAY support an explicit GroupPolicy extension that
+   grants conflict-resolution authority to verified administrator devices
+   or to an append-only relay ordering service. Such an extension is out
+   of scope for FCEP-2 version 2.0 and MUST NOT silently alter V2.0
+   Manual conflict behavior.
+
+15.5. Epoch Transition
 
    Each merged MLS Commit creates a new MLS epoch. A client MUST associate
    every decrypted application message with its MLS epoch for diagnostics.
@@ -669,6 +848,21 @@ Table of Contents
    A receiver MUST treat duplicate application messages, proposals, and
    commits as non-fatal. It MUST rely on MLS state and transport tracking
    to suppress duplicate user-visible plaintext.
+
+17.4. Optional Availability Signalling
+
+   FCEP-2 does not define cryptographic liveness.
+
+   An implementation MAY provide user-configurable availability signalling
+   outside MLS, such as IRC away state, server account presence, or a
+   relay mailbox status.
+
+   Such signalling MUST be displayed as advisory only. It MUST NOT trigger
+   automatic member removal, automatic trust changes, or cryptographic
+   state transitions.
+
+   An implementation SHOULD disable periodic signalling by default to
+   minimize metadata leakage.
 
 18. Resynchronization and Offline Recovery
 
@@ -748,6 +942,29 @@ Table of Contents
    A failed persistence operation MUST prevent sending a state-changing MLS
    object. A client MUST surface this failure to the user.
 
+19.4. OpenMLS Storage Model
+
+   An implementation MUST persist all state required by the selected
+   OpenMLS StorageProvider, including group state, key material references,
+   queued proposals, key package bundles, PSK material where applicable,
+   and provider-specific records.
+
+   serialized_mls_group in Section 21 is illustrative only. It MUST NOT
+   be interpreted as requiring an implementation to serialize MlsGroup
+   directly if the selected OpenMLS version persists state through its
+   StorageProvider.
+
+   The application MUST ensure that a group-state mutation, the associated
+   StorageProvider transaction, and the FCEP-2 transport outbox are
+   committed consistently. If atomic cross-store transactions are not
+   available, the implementation MUST persist an idempotent outbox record
+   before attempting IRC transmission.
+
+   A persistent outbox MUST track each outgoing FCEP-2 object with an
+   identifier, a delivery status, and a monotonic sequence number. A
+   client MUST retry undelivered objects on reconnection and MUST discard
+   delivered objects after positive acknowledgement or expiry.
+
 20. Rust and OpenMLS Implementation Profile
 
 20.1. Provider
@@ -825,19 +1042,47 @@ Table of Contents
        Revoked,
    }
 
+   pub enum EnvelopeKind {
+       Application,  // A
+       Proposal,     // P
+       Commit,       // C
+       Welcome,      // W
+       KeyPackage,   // K
+       Request,      // R
+       Sync,         // S
+       Ack,          // X
+   }
+
    pub struct PersistedGroup {
        pub binding: GroupBinding,
        pub serialized_mls_group: Vec<u8>,
        pub local_device_id: [u8; 16],
        pub known_devices: Vec<DeviceIdentity>,
        pub conflict: Option<CommitConflict>,
+       pub outbox: Vec<OutboxEntry>,
        pub schema_version: u32,
+   }
+
+   pub struct CommitConflict {
+       pub group_id: Vec<u8>,
+       pub old_epoch: u64,
+       pub conflicting_commits: Vec<Vec<u8>>,
+       pub detected_at_unix: i64,
+       pub source_diagnostics: Vec<String>,
+   }
+
+   pub struct OutboxEntry {
+       pub id: [u8; 16],
+       pub envelope: Vec<u8>,
+       pub created_at_unix: i64,
+       pub delivered: bool,
+       pub sequence: u64,
    }
 
    pub struct FragmentAssembly {
        pub source_id: String,
        pub object_id: [u8; 16],
-       pub original_type: u8,
+       pub kind: EnvelopeKind,
        pub count: u16,
        pub received: Vec<Option<Vec<u8>>>,
        pub created_at_unix: i64,
@@ -948,6 +1193,21 @@ Table of Contents
    MLS cannot protect plaintext after it is displayed, copied, logged,
    screen-captured, or accessed by malware on a member device. Secure local
    storage and device hygiene remain required.
+
+23.9. Transport Control Authentication
+
+   IRC source prefixes and nicknames are unauthenticated transport
+   metadata.
+
+   KeyPackage objects MUST be validated using MLS credential and signature
+   checks. MLS Application, Proposal, Commit, and Welcome objects MUST be
+   validated by MLS before affecting group state or user-visible security
+   status.
+
+   Requests, acknowledgements, fragment headers, and synchronization
+   metadata are advisory transport objects. They MUST NOT by themselves
+   alter group membership, trust state, MLS epoch, authorization policy,
+   or local identity bindings.
 
 24. Migration from FCEP-1
 

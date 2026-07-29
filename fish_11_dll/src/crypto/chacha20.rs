@@ -16,7 +16,7 @@ use crate::error::{FishError, Result};
 use crate::utils::{base64_decode, base64_encode, generate_random_bytes};
 
 /// XChaCha20-Poly1305 nonce size: 192 bits (24 bytes)
-/// This eliminates nonce collision risk entirely — no practical limit on messages per key.
+/// This eliminates nonce collision risk entirely : no practical limit on messages per key.
 const MAX_CIPHERTEXT_SIZE: usize = MAX_MESSAGE_SIZE + 16 + 24; // message + auth tag + nonce
 pub const NONCE_SIZE_BYTES: usize = 24; // XChaCha20-Poly1305 nonce size (192 bits)
 
@@ -84,7 +84,7 @@ pub fn is_nonce_replay(nonce: &[u8]) -> Result<bool> {
     if cache_lock_result.is_err() {
         return Err(FishError::CryptoError("Failed to acquire nonce cache lock".to_string()));
     }
-    let mut cache = cache_lock_result.unwrap();
+    let cache = cache_lock_result.unwrap();
 
     Ok(cache.contains_key(&nonce_array))
 }
@@ -134,7 +134,7 @@ pub fn encrypt_message(
 
     // Generate a secure nonce using fully random bytes (24 bytes for XChaCha20)
     // XChaCha20 uses HChaCha20 to derive a sub-key from the 24-byte nonce,
-    // eliminating nonce collision risk — no practical limit on messages per key.
+    // eliminating nonce collision risk : no practical limit on messages per key.
     let nonce_bytes = generate_random_bytes(NONCE_SIZE_BYTES);
     let mut nonce_array = [0u8; NONCE_SIZE_BYTES];
     nonce_array.copy_from_slice(&nonce_bytes[..NONCE_SIZE_BYTES]);

@@ -1,12 +1,12 @@
 [workspace]
-members = ["fish_11_dll", "fish_11_cli", "fish_11_inject", "fish_11_core"]
+members = ["fish_11_dll", "fish_11_cli", "fish_11_inject", "fish_11_core", "fish_11_mls", "fish_11_mls_bot", "fish_11_relay"]
 
 # FUZZING ON LINUX : enable here !
 # Uncomment the line below on Unix systems to enable fuzzing:
 # members = ["fish_11_dll", "fish_11_cli", "fish_11_inject", "fish_11_core", "fuzz"]
 #
 # Note: fish_11_inject is Windows-only (DLL injection / Winsock hooking).
-# On Linux/FreeBSD it compiles to an empty .cdylib — use the 3 crates below instead:
+# On Linux/FreeBSD it compiles to an empty .cdylib : use the 3 crates below instead :
 #   cargo build -p fish_11_dll -p fish_11_cli -p fish_11_core
 resolver = "2"
 

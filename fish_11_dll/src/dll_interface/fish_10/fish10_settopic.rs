@@ -3,7 +3,7 @@
 //! This module provides the DLL interface for setting plaintext topics in the legacy fish10 configuration.
 //! It allows users to save topics in plaintext format via the mIRC script.
 
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::os::raw::c_char;
 
 use crate::unified_error::{DllError, DllResult};

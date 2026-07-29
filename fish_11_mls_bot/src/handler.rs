@@ -76,8 +76,9 @@ pub async fn handle_irc_message(
     }
 
     let (target, text) = match &message.command {
-        Command::PRIVMSG(target, text) |
-        Command::NOTICE(target, text) => (target.clone(), text.clone()),
+        Command::PRIVMSG(target, text) | Command::NOTICE(target, text) => {
+            (target.clone(), text.clone())
+        }
         Command::JOIN(channel, _, _) => {
             deliver_pending_welcomes(client, store, config, &source_nick, channel).await;
             return;
@@ -90,7 +91,9 @@ pub async fn handle_irc_message(
         return;
     }
 
-    if let Err(e) = process_fcep2_line(client, store, bridge, config, &source_nick, &target, trimmed).await {
+    if let Err(e) =
+        process_fcep2_line(client, store, bridge, config, &source_nick, &target, trimmed).await
+    {
         warn!("FCEP-2 processing error from {}: {}", source_nick, e);
     }
 }
@@ -140,7 +143,7 @@ async fn process_fcep2_line(
     client: &Client,
     store: &EncryptedStore,
     bridge: &DllBridge,
-    config: &AppConfig,
+    _config: &AppConfig,
     source_nick: &str,
     target: &str,
     line: &str,
@@ -159,27 +162,36 @@ async fn process_fcep2_line(
         match kind {
             "K" => {
                 // §9.2: KeyPackage received
-                store.put(
-                    "key_packages",
-                    format!("kp:{}:{}", target_id, source_nick).as_bytes(),
-                    serde_json::json!({
-                        "device_id": target_id,
-                        "nickname": source_nick,
-                        "payload": payload,
-                        "received_at": Utc::now().to_rfc3339(),
-                    }).to_string().as_bytes(),
-                ).await?;
+                store
+                    .put(
+                        "key_packages",
+                        format!("kp:{}:{}", target_id, source_nick).as_bytes(),
+                        serde_json::json!({
+                            "device_id": target_id,
+                            "nickname": source_nick,
+                            "payload": payload,
+                            "received_at": Utc::now().to_rfc3339(),
+                        })
+                        .to_string()
+                        .as_bytes(),
+                    )
+                    .await?;
                 info!("Stored KeyPackage for device {}", target_id);
 
                 // §9.2: Send X acknowledgement
-                let ack = format!("+FCEP2 X {} KP_STORED:{}",
-                    target_id, URL_SAFE_NO_PAD.encode(source_nick.as_bytes()));
+                let ack = format!(
+                    "+FCEP2 X {} KP_STORED:{}",
+                    target_id,
+                    URL_SAFE_NO_PAD.encode(source_nick.as_bytes())
+                );
                 client.send_notice(source_nick, &ack)?;
             }
             "W" => {
-                // §13.1: Welcome received — store for delivery on JOIN
+                // §13.1: Welcome received : store for delivery on JOIN
                 let key = format!("welcome:{}", source_nick.to_lowercase());
-                let existing = store.get("welcomes", key.as_bytes()).await?
+                let existing = store
+                    .get("welcomes", key.as_bytes())
+                    .await?
                     .and_then(|d| serde_json::from_slice::<Vec<serde_json::Value>>(&d).ok())
                     .unwrap_or_default();
 
@@ -189,26 +201,29 @@ async fn process_fcep2_line(
                     "payload": payload,
                 }));
 
-                store.put(
-                    "welcomes", key.as_bytes(),
-                    serde_json::to_vec(&welcomes)?.as_slice(),
-                ).await?;
+                store
+                    .put("welcomes", key.as_bytes(), serde_json::to_vec(&welcomes)?.as_slice())
+                    .await?;
                 info!("Stored Welcome for {} (group {})", source_nick, target_id);
             }
             "C" => {
                 // §15.2: Commit logged for sync history
                 let epoch = extract_epoch_from_dll(&dll_result);
-                store.put(
-                    "commit_logs",
-                    format!("commit:{}:{}", target_id, epoch).as_bytes(),
-                    serde_json::json!({
-                        "group_id": target_id,
-                        "epoch": epoch,
-                        "payload": payload,
-                        "source": source_nick,
-                        "received_at": Utc::now().to_rfc3339(),
-                    }).to_string().as_bytes(),
-                ).await?;
+                store
+                    .put(
+                        "commit_logs",
+                        format!("commit:{}:{}", target_id, epoch).as_bytes(),
+                        serde_json::json!({
+                            "group_id": target_id,
+                            "epoch": epoch,
+                            "payload": payload,
+                            "source": source_nick,
+                            "received_at": Utc::now().to_rfc3339(),
+                        })
+                        .to_string()
+                        .as_bytes(),
+                    )
+                    .await?;
             }
             "R" => {
                 // §18.2: Request (KP or SYNC)
@@ -234,27 +249,32 @@ async fn process_fcep2_line(
 }
 
 /// Handle a backlog TCP message for out-of-band MLS operations
-pub async fn handle_backlog_message(
-    store: &EncryptedStore,
-    msg: &BacklogMessage,
-) {
+pub async fn handle_backlog_message(store: &EncryptedStore, msg: &BacklogMessage) {
     match msg {
         BacklogMessage::KeyPackage { device_id, keypackage_b64 } => {
-            store.put(
-                "key_packages",
-                format!("kp_backlog:{}", device_id).as_bytes(),
-                serde_json::json!({
-                    "device_id": device_id,
-                    "payload": keypackage_b64,
-                    "source": "backlog",
-                    "received_at": Utc::now().to_rfc3339(),
-                }).to_string().as_bytes(),
-            ).await.ok();
+            store
+                .put(
+                    "key_packages",
+                    format!("kp_backlog:{}", device_id).as_bytes(),
+                    serde_json::json!({
+                        "device_id": device_id,
+                        "payload": keypackage_b64,
+                        "source": "backlog",
+                        "received_at": Utc::now().to_rfc3339(),
+                    })
+                    .to_string()
+                    .as_bytes(),
+                )
+                .await
+                .ok();
             info!("Backlog: stored KeyPackage for device {}", device_id);
         }
         BacklogMessage::Welcome { device_id, group_id_b64, welcome_b64 } => {
             let key = format!("welcome:{}", device_id.to_lowercase());
-            let existing = store.get("welcomes", key.as_bytes()).await.ok()
+            let existing = store
+                .get("welcomes", key.as_bytes())
+                .await
+                .ok()
                 .flatten()
                 .and_then(|d| serde_json::from_slice::<Vec<serde_json::Value>>(&d).ok())
                 .unwrap_or_default();
@@ -265,10 +285,14 @@ pub async fn handle_backlog_message(
                 "payload": welcome_b64,
             }));
 
-            store.put(
-                "welcomes", key.as_bytes(),
-                serde_json::to_vec(&welcomes).unwrap_or_default().as_slice(),
-            ).await.ok();
+            store
+                .put(
+                    "welcomes",
+                    key.as_bytes(),
+                    serde_json::to_vec(&welcomes).unwrap_or_default().as_slice(),
+                )
+                .await
+                .ok();
             info!("Backlog: stored Welcome for device {}", device_id);
         }
         BacklogMessage::Commit { group_id_b64, epoch, .. } => {
@@ -310,7 +334,6 @@ async fn handle_request(
         "KP" => {
             // §11.2: KeyPackage request
             let query = if parts.len() > 1 { parts[1] } else { source_nick };
-            let key = format!("kp:{}:*", query);
 
             // Scan for matching KeyPackage
             let results = store.scan("key_packages").await?;
@@ -331,8 +354,8 @@ async fn handle_request(
             }
 
             // Not found: send NACK (§9.2)
-            let nack = format!("+FCEP2 X {} {}",
-                target_id, URL_SAFE_NO_PAD.encode(b"ERR_KP_UNAVAILABLE"));
+            let nack =
+                format!("+FCEP2 X {} {}", target_id, URL_SAFE_NO_PAD.encode(b"ERR_KP_UNAVAILABLE"));
             client.send_notice(source_nick, &nack)?;
         }
         "SYNC" => {
@@ -345,10 +368,10 @@ async fn handle_request(
                 let mut count = 0u64;
                 for (_, value) in results {
                     if let Ok(commit) = serde_json::from_slice::<serde_json::Value>(&value) {
-                        let is_match = commit.get("group_id")
-                            .and_then(|v| v.as_str()) == Some(group_id_hex);
-                        let epoch_gt = commit.get("epoch")
-                            .and_then(|v| v.as_u64()).unwrap_or(0) > known_epoch;
+                        let is_match =
+                            commit.get("group_id").and_then(|v| v.as_str()) == Some(group_id_hex);
+                        let epoch_gt =
+                            commit.get("epoch").and_then(|v| v.as_u64()).unwrap_or(0) > known_epoch;
 
                         if is_match && epoch_gt {
                             if let Some(payload) = commit.get("payload").and_then(|v| v.as_str()) {

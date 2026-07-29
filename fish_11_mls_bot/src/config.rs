@@ -1,11 +1,12 @@
 //! FCEP-2 MLS Bot TOML Configuration Engine
 //!
-//! Loads and manages `fish_mls_bot.toml` — the dedicated configuration file
+//! Loads and manages `fish_mls_bot.toml` : the dedicated configuration file
 //! for the standalone MLS test bot. Structure mirrors `fish_11_relay` patterns
 //! with additional MLS backlog and encrypted database sections.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -118,10 +119,7 @@ impl Default for AppConfig {
                 encryption_key: "CHANGE_ME_32_BYTES_SECRET_KEY!!".into(),
                 auto_compact: true,
             },
-            logging: LoggingConfig {
-                level: "info".into(),
-                file: String::new(),
-            },
+            logging: LoggingConfig { level: "info".into(), file: String::new() },
         }
     }
 }
@@ -180,7 +178,9 @@ impl AppConfig {
         }
         match self.mls.mode.as_str() {
             "relay" | "full" | "master-key" => {}
-            other => anyhow::bail!("mls.mode must be 'relay', 'full', or 'master-key', got '{}'", other),
+            other => {
+                anyhow::bail!("mls.mode must be 'relay', 'full', or 'master-key', got '{}'", other)
+            }
         }
         if self.backlog.listen_port == 0 || self.backlog.listen_port > 65535 {
             anyhow::bail!("backlog.listen_port must be 1-65535");
@@ -225,8 +225,7 @@ impl AppConfig {
         let info = b"fish11.mls.bot.storage.key";
         let hk = Hkdf::<Sha256>::new(Some(salt), raw);
         let mut okm = [0u8; 32];
-        hk.expand(info, &mut okm)
-            .map_err(|e| anyhow::anyhow!("HKDF expansion failed: {}", e))?;
+        hk.expand(info, &mut okm).map_err(|e| anyhow::anyhow!("HKDF expansion failed: {}", e))?;
         Ok(okm)
     }
 }

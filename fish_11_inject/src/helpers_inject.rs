@@ -31,10 +31,10 @@ use crate::pointer_validation::validate_function_pointer;
 /// Panics if `ptr` is `None` (symbol not found).
 #[inline]
 unsafe fn unwrap_farproc(ptr: FARPROC) -> *const () {
-    let raw = ptr.expect("FARPROC was None — function pointer resolution failed");
+    let raw = ptr.expect("FARPROC was None : function pointer resolution failed");
     // SAFETY: FARPROC is `Option<unsafe extern "system" fn() -> isize>`.
     // `raw` is the inner fn pointer (guaranteed non-null by expect).
-    // We transmute to `*const ()` — a universal opaque pointer — so the caller
+    // We transmute to `*const ()` : a universal opaque pointer : so the caller
     // can perform the final, typed `transmute` to its concrete function signature.
     std::mem::transmute::<unsafe extern "system" fn() -> isize, *const ()>(raw)
 }
@@ -346,12 +346,12 @@ unsafe fn get_winsock_function(func_name: &str) -> FARPROC {
     func_addr
 }
 
-/// Helper to handle mutex poisoning — abort to prevent silent corruption.
+/// Helper to handle mutex poisoning : abort to prevent silent corruption.
 /// A poisoned mutex means a thread panicked while holding the lock, leaving
 /// shared state in an inconsistent state. Continuing with corrupted data is
 /// worse than crashing.
 pub fn handle_poison<T>(err: PoisonError<T>) -> T {
-    panic!("Mutex poisoned — aborting to prevent state corruption: {}", err);
+    panic!("Mutex poisoned : aborting to prevent state corruption: {}", err);
 }
 
 #[cfg(test)]

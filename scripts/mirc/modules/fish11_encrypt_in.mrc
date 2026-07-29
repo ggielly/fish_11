@@ -58,6 +58,16 @@ alias -l fish11_try_decrypt_channel {
   var %process_incoming = $dll(%Fish11DllFile, INI_GetBool, process_incoming 1)
   if (%process_incoming == 0) return %message
   
+  ; Check for FCEP-2 prefix first
+  if ($left(%message, 7) == +FCEP2 ) {
+    ; FCEP-2 message - process via FCEP-2 handler
+    var %result = $fish11_fcep2_process($nick, %channel, %message)
+    if (%result != $null) {
+      return %result
+    }
+    return %message
+  }
+  
   ; Get the encryption prefix (default: +FiSH)
   var %prefix = $dll(%Fish11DllFile, INI_GetString, encryption_prefix +FiSH)
   
@@ -116,6 +126,16 @@ on *:TEXT:*:#:{
 
 ; === INCOMING PRIVATE NOTICES ===
 on *:NOTICE:*:?:{
+  ; Check for FCEP-2 device-scoped messages (+FCEP2 W/K/R/S/X)
+  if ($left($1-, 7) == +FCEP2 ) {
+    ; FCEP-2 device-scoped message - process via FCEP-2 handler
+    var %result = $fish11_fcep2_process($nick, $me, $1-)
+    if (%result != $null) {
+      echo $color(Mode text) -dm $nick *** FCEP-2: %result
+    }
+    halt
+  }
+  
   ; Try to decrypt the message
   var %decrypted = $fish11_try_decrypt_incoming($nick, $1-)
   

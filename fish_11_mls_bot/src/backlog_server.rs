@@ -23,8 +23,9 @@ use std::time::Duration;
 use anyhow::Result;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio::sync::{Mutex, RwLock, broadcast};
 use tracing::{debug, error, info, warn};
 
 use crate::config::BacklogConfig;
@@ -38,28 +39,13 @@ const MAX_PAYLOAD_SIZE: u32 = 16 * 1024 * 1024;
 #[serde(tag = "type", content = "payload")]
 pub enum BacklogMessage {
     /// KeyPackage distribution (§11.4)
-    KeyPackage {
-        device_id: String,
-        keypackage_b64: String,
-    },
+    KeyPackage { device_id: String, keypackage_b64: String },
     /// Welcome delivery (§13.2)
-    Welcome {
-        device_id: String,
-        group_id_b64: String,
-        welcome_b64: String,
-    },
+    Welcome { device_id: String, group_id_b64: String, welcome_b64: String },
     /// Commit broadcast (§15.2)
-    Commit {
-        group_id_b64: String,
-        epoch: u64,
-        commit_b64: String,
-    },
+    Commit { group_id_b64: String, epoch: u64, commit_b64: String },
     /// Sync request (§18.2)
-    SyncRequest {
-        group_id_b64: String,
-        known_epoch: u64,
-        request_id: String,
-    },
+    SyncRequest { group_id_b64: String, known_epoch: u64, request_id: String },
     /// Sync response (§18.2)
     SyncResponse {
         group_id_b64: String,
@@ -68,23 +54,13 @@ pub enum BacklogMessage {
         current_epoch: u64,
     },
     /// Application-level heartbeat for NAT binding refresh
-    Ping {
-        timestamp: i64,
-    },
+    Ping { timestamp: i64 },
     /// Heartbeat response
-    Pong {
-        timestamp: i64,
-    },
+    Pong { timestamp: i64 },
     /// Peer discovery
-    PeerAnnounce {
-        device_id: String,
-        endpoint: String,
-        capabilities: Vec<String>,
-    },
+    PeerAnnounce { device_id: String, endpoint: String, capabilities: Vec<String> },
     /// Disconnect notification
-    Disconnect {
-        reason: String,
-    },
+    Disconnect { reason: String },
 }
 
 /// Backlog peer state
@@ -132,15 +108,14 @@ impl BacklogServer {
         );
 
         let listen_addr = nat_cfg.listen_addr()?;
-        let listener = TcpListener::bind(listen_addr).await
+        let listener = TcpListener::bind(listen_addr)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to bind backlog on {}: {}", listen_addr, e))?;
 
         nat_helper::log_nat_status(&nat_cfg);
         info!(
             "Backlog server listening on {} (max peers: {}, timeout: {}s)",
-            listen_addr,
-            self.config.max_peers,
-            self.config.peer_timeout_secs,
+            listen_addr, self.config.max_peers, self.config.peer_timeout_secs,
         );
 
         loop {
@@ -155,7 +130,7 @@ impl BacklogServer {
                     info!("New backlog peer connection from {}", addr);
                     let server = self.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = server.handle_peer(stream, addr).await {
+                        if let Err(e) = server.clone().handle_peer(stream, addr).await {
                             debug!("Peer {} disconnected: {}", addr, e);
                         }
                         server.peers.write().await.remove(&addr);
@@ -170,44 +145,43 @@ impl BacklogServer {
     }
 
     /// Handle an individual peer connection.
-    async fn handle_peer(self: Arc<Self>, mut stream: TcpStream, addr: SocketAddr) -> Result<()> {
-        // Set TCP keepalive for NAT binding refresh
-        let socket = stream.into_std()?;
-        let tokio_socket = tokio::net::TcpStream::from_std(socket)?;
-
-        // Apply NAT keepalive
-        if let Err(e) = nat_helper::set_nat_keepalive(&tokio_socket, self.config.peer_timeout_secs) {
+    async fn handle_peer(self: Arc<Self>, stream: TcpStream, addr: SocketAddr) -> Result<()> {
+        // Apply NAT keepalive on the TcpStream
+        if let Err(e) = nat_helper::set_nat_keepalive(&stream, self.config.peer_timeout_secs) {
             warn!("Failed to set NAT keepalive for {}: {}", addr, e);
         }
 
-        let (reader, mut writer) = tokio::io::split(tokio_socket);
+        let (reader, writer) = tokio::io::split(stream);
+        let writer = Arc::new(Mutex::new(writer));
         let mut buf_reader = tokio::io::BufReader::new(reader);
 
         // Send Ping heartbeat periodically
-        let heartbeat_tx = self.message_tx.clone();
+        let heartbeat_writer = writer.clone();
         let heartbeat_handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(10));
             loop {
                 interval.tick().await;
-                let ping = BacklogMessage::Ping {
-                    timestamp: Utc::now().timestamp(),
-                };
+                let ping = BacklogMessage::Ping { timestamp: Utc::now().timestamp() };
                 if let Ok(json) = serde_json::to_vec(&ping) {
                     let len = (json.len() as u32).to_be_bytes();
-                    let _ = tokio::io::AsyncWriteExt::write_all(&mut writer, &len).await;
-                    let _ = tokio::io::AsyncWriteExt::write_all(&mut writer, &json).await;
+                    let mut w = heartbeat_writer.lock().await;
+                    let _ = w.write_all(&len).await;
+                    let _ = w.write_all(&json).await;
                 }
             }
         });
 
         // Track peer
-        self.peers.write().await.insert(addr, PeerState {
-            device_id: String::new(),
+        self.peers.write().await.insert(
             addr,
-            connected_at: Utc::now().timestamp(),
-            last_active: Utc::now().timestamp(),
-            capabilities: Vec::new(),
-        });
+            PeerState {
+                device_id: String::new(),
+                addr,
+                connected_at: Utc::now().timestamp(),
+                last_active: Utc::now().timestamp(),
+                capabilities: Vec::new(),
+            },
+        );
 
         // Read messages from the peer
         use tokio::io::AsyncReadExt;
@@ -233,7 +207,9 @@ impl BacklogServer {
             }
 
             let mut payload = vec![0u8; payload_len];
-            buf_reader.read_exact(&mut payload).await
+            buf_reader
+                .read_exact(&mut payload)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to read payload from {}: {}", addr, e))?;
 
             // Deserialize and handle
@@ -270,13 +246,12 @@ impl BacklogServer {
 
         heartbeat_handle.abort();
         // Send disconnect notification
-        let disconnect = BacklogMessage::Disconnect {
-            reason: "Peer disconnected".into(),
-        };
+        let disconnect = BacklogMessage::Disconnect { reason: "Peer disconnected".into() };
         if let Ok(json) = serde_json::to_vec(&disconnect) {
             let len = (json.len() as u32).to_be_bytes();
-            let _ = tokio::io::AsyncWriteExt::write_all(&mut writer, &len).await;
-            let _ = tokio::io::AsyncWriteExt::write_all(&mut writer, &json).await;
+            let mut w = writer.lock().await;
+            let _ = w.write_all(&len).await;
+            let _ = w.write_all(&json).await;
         }
 
         info!("Peer {} disconnected", addr);

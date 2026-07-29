@@ -1,4 +1,4 @@
-//! FCEP-2 MLS IRC Test Bot — Standalone CLI
+//! FCEP-2 MLS IRC Test Bot : Standalone CLI
 //!
 //! Autonomous CLI binary for Windows & Linux that invokes `fish_11.dll` / `libfish_11.so`
 //! exported functions to execute FCEP-2 MLS relay and master-key operations.
@@ -24,15 +24,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
+#[cfg(unix)]
+use anyhow::anyhow;
 use clap::{Parser, Subcommand};
-use tracing::{error, info, warn};
-use tracing_subscriber::EnvFilter;
-
 use config::{AppConfig, DEFAULT_CONFIG_FILE};
 use database::EncryptedStore;
 use dll_bridge::DllBridge;
 use irc_client::IrcClient;
+use tracing::{error, info, warn};
+use tracing_subscriber::EnvFilter;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -42,7 +43,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[command(
     name = "fish_11_mls_bot",
     version = VERSION,
-    about = "FiSH-11 FCEP-2 MLS IRC Test Bot — Relay, Key Master & Backlog Server"
+    about = "FiSH-11 FCEP-2 MLS IRC Test Bot : Relay, Key Master & Backlog Server"
 )]
 struct Cli {
     /// Path to TOML configuration file
@@ -106,18 +107,13 @@ async fn main() -> Result<()> {
     config.validate()?;
 
     // Initialize logging
-    let log_level = if cli.debug {
-        "debug"
-    } else {
-        &config.logging.level
-    };
-    let log_file = cli.log_file.as_ref()
-        .or_else(|| {
-            let f = &config.logging.file;
-            if f.is_empty() { None } else { Some(PathBuf::from(f)) }
-        });
+    let log_level = if cli.debug { "debug" } else { &config.logging.level };
+    let log_file: Option<&std::path::Path> = cli.log_file.as_deref().or_else(|| {
+        let f = &config.logging.file;
+        if f.is_empty() { None } else { Some(std::path::Path::new(f)) }
+    });
 
-    init_logging(log_level, log_file.as_deref());
+    init_logging(log_level, log_file);
 
     info!("FiSH-11 FCEP-2 MLS Test Bot v{} starting...", VERSION);
 
@@ -141,7 +137,7 @@ async fn main() -> Result<()> {
             println!("{}", res);
             return Ok(());
         }
-        Some(Commands::ExportBackup { output }) => {
+        Some(Commands::ExportBackup { output: _ }) => {
             // Export requires full database init
         }
         _ => {}
@@ -200,7 +196,11 @@ async fn main() -> Result<()> {
             "Backlog server starting on {}:{} (NAT: {})",
             config.backlog.bind_address,
             config.backlog.listen_port,
-            if config.backlog.external_address.is_empty() { "auto" } else { &config.backlog.external_address },
+            if config.backlog.external_address.is_empty() {
+                "auto"
+            } else {
+                &config.backlog.external_address
+            },
         );
 
         Some(server)
@@ -253,8 +253,7 @@ async fn main() -> Result<()> {
 
 /// Initialize tracing logging with optional file output.
 fn init_logging(level: &str, log_file: Option<&std::path::Path>) {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(level));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
 
     let subscriber = tracing_subscriber::fmt().with_env_filter(env_filter);
 
@@ -268,7 +267,7 @@ fn init_logging(level: &str, log_file: Option<&std::path::Path>) {
                 path.file_name().unwrap_or_default(),
             );
             let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-            // Leak the guard — it must live for the process lifetime
+            // Leak the guard : it must live for the process lifetime
             let guard: &'static _ = Box::leak(Box::new(_guard));
             subscriber.with_writer(non_blocking).init();
             let _ = guard; // suppress unused warning
@@ -287,18 +286,18 @@ async fn setup_signal_handler(shutdown_tx: tokio::sync::mpsc::Sender<()>) {
     {
         let tx = shutdown_tx.clone();
         tokio::spawn(async move {
-            if let Ok(mut sigint) = tokio::signal::unix::signal(
-                tokio::signal::unix::SignalKind::interrupt()
-            ) {
+            if let Ok(mut sigint) =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+            {
                 sigint.recv().await;
                 let _ = tx.send(()).await;
             }
         });
         let tx = shutdown_tx.clone();
         tokio::spawn(async move {
-            if let Ok(mut sigterm) = tokio::signal::unix::signal(
-                tokio::signal::unix::SignalKind::terminate()
-            ) {
+            if let Ok(mut sigterm) =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            {
                 sigterm.recv().await;
                 let _ = tx.send(()).await;
             }

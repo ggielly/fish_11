@@ -193,7 +193,8 @@ impl Keystore {
         let ini = Ini::load_from_str(&ini_string)
             .map_err(|e| format!("Failed to parse keystore INI: {}", e))?;
 
-        let master_key_salt = ini.get_from(Some("MasterKey"), "salt").unwrap_or_default().to_string();
+        let master_key_salt =
+            ini.get_from(Some("MasterKey"), "salt").unwrap_or_default().to_string();
 
         // Load nonce counters
         let mut nonce_counters = HashMap::new();
@@ -254,7 +255,8 @@ impl Keystore {
 
         // Save nonce counters
         for (context, counter) in &self.nonce_counters {
-            ini.with_section(Some("NonceCounters")).set(context.as_str(), counter.to_string().as_str());
+            ini.with_section(Some("NonceCounters"))
+                .set(context.as_str(), counter.to_string().as_str());
         }
 
         // Save key metadata
@@ -266,8 +268,7 @@ impl Keystore {
 
         // Convert INI to string
         let mut buffer = std::io::Cursor::new(Vec::new());
-        ini.write_to(&mut buffer)
-            .map_err(|e| format!("Failed to write INI: {}", e))?;
+        ini.write_to(&mut buffer).map_err(|e| format!("Failed to write INI: {}", e))?;
         let ini_string = String::from_utf8(buffer.into_inner())
             .map_err(|e| format!("Failed to convert INI to UTF-8: {}", e))?;
 
@@ -291,7 +292,8 @@ impl Keystore {
         }
 
         for (context, counter) in &self.nonce_counters {
-            ini.with_section(Some("NonceCounters")).set(context.as_str(), counter.to_string().as_str());
+            ini.with_section(Some("NonceCounters"))
+                .set(context.as_str(), counter.to_string().as_str());
         }
 
         for (key_id, metadata) in &self.key_metadata {
@@ -301,8 +303,7 @@ impl Keystore {
         }
 
         let mut buffer = std::io::Cursor::new(Vec::new());
-        ini.write_to(&mut buffer)
-            .map_err(|e| format!("Failed to write INI: {}", e))?;
+        ini.write_to(&mut buffer).map_err(|e| format!("Failed to write INI: {}", e))?;
         let ini_string = String::from_utf8(buffer.into_inner())
             .map_err(|e| format!("Failed to convert INI to UTF-8: {}", e))?;
 
@@ -314,7 +315,8 @@ impl Keystore {
         let ini = Ini::load_from_str(ini_string)
             .map_err(|e| format!("Failed to parse keystore INI: {}", e))?;
 
-        let master_key_salt = ini.get_from(Some("MasterKey"), "salt").unwrap_or_default().to_string();
+        let master_key_salt =
+            ini.get_from(Some("MasterKey"), "salt").unwrap_or_default().to_string();
         let password_verifier = ini.get_from(Some("MasterKey"), "verifier").map(|s| s.to_string());
 
         let mut nonce_counters = HashMap::new();

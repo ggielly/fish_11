@@ -55,7 +55,7 @@ impl BufferPool {
         stats.allocations += 1;
 
         // Try to find a suitable buffer in the pool
-        if let Some(mut buffer) = self.try_acquire_from_pool(min_capacity) {
+        if let Some(buffer) = self.try_acquire_from_pool(min_capacity) {
             stats.reuses += 1;
             debug!(
                 "BufferPool: reused buffer (capacity: {}, requested: {})",
@@ -67,7 +67,7 @@ impl BufferPool {
 
         // No suitable buffer found, allocate a new one
         let capacity = std::cmp::max(min_capacity, 1024); // Minimum 1KB
-        let mut buffer = BytesMut::with_capacity(capacity);
+        let buffer = BytesMut::with_capacity(capacity);
 
         trace!(
             "BufferPool: allocated new buffer (capacity: {}, requested: {})",

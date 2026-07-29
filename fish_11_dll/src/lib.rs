@@ -27,9 +27,11 @@ pub mod platform_types;
 pub mod utils;
 #[macro_use]
 pub mod logging_macros;
-pub mod channel_encryption;
+// FCEP-1 channel encryption removed : replaced by FCEP-2 (MLS over IRC)
+// pub mod channel_encryption;
 #[cfg(windows)]
 pub mod engine_registration;
+pub mod fcep2;
 pub mod unified_error;
 
 use once_cell::sync::Lazy;

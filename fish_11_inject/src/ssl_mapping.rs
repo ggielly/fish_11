@@ -194,7 +194,7 @@ impl SslSocketMapping {
                 }
             };
 
-            let ssl_id = ssl_ptr as usize;
+            let _ssl_id = ssl_ptr as usize;
 
             // Now perform the removal atomically
             // We use the same order as remove_ssl for consistency: SSL_TO_SOCKET first, then SOCKET_TO_SSL

@@ -39,6 +39,12 @@ libc = "0.2.177"
 parking_lot = "0.12"
 thiserror = "2.0"
 
+# FCEP-2 dependencies
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.10", features = ["v4"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+
 # Legacy compatibility
 dirs = "6.0"
 tempfile = "3.10"
@@ -52,8 +58,16 @@ num-bigint = { version = "0.4", features = ["rand"] }
 num-traits = "0.2"
 aes-keywrap = "0.9"
 
+# OpenMLS (pinned to exact versions matching fish_11_mls)
+openmls = { version = "=0.8.1", features = ["openmls_rust_crypto"] }
+openmls_rust_crypto = "=0.5.1"
+openmls_basic_credential = "=0.5.0"
+openmls_traits = "=0.5.0"
+tls_codec = "=0.4.2"
+
 # Shared core library
 fish_11_core = { path = "../fish_11_core" }
+fish_11_mls = { path = "../fish_11_mls" }
 
 # Platform-specific dependencies
 [target.'cfg(windows)'.dependencies]

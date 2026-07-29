@@ -405,7 +405,7 @@ Table of Contents
      (after the next ratchet step by any participant).
    - In an inactive channel, recovery requires manual re-keying.
 
-   Limitation — No Asymmetric Ratchet:
+   Limitation : No Asymmetric Ratchet:
    Unlike Signal's Double Ratchet, which combines a symmetric KDF chain
    with an asynchronous DH ratchet (generating fresh ephemeral key pairs
    at each step), FCEP-1 uses only symmetric ratcheting. This means:

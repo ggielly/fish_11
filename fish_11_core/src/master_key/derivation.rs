@@ -40,10 +40,10 @@ pub fn derive_master_key_with_salt(
     let (m_cost, t_cost, p_cost) = (1024, 1, 1); // 1 MB, 1 iteration, 1 lane
 
     let params = Params::new(
-        m_cost,    // memory cost
-        t_cost,    // time cost
-        p_cost,    // parallelism
-        Some(32),  // output length
+        m_cost,   // memory cost
+        t_cost,   // time cost
+        p_cost,   // parallelism
+        Some(32), // output length
     )
     .map_err(|e| format!("Argon2 params error: {}", e))?;
 

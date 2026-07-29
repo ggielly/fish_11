@@ -11,6 +11,7 @@
 //! bot is behind a residential or CGNAT gateway.
 
 use std::net::SocketAddr;
+
 use anyhow::Result;
 use tracing::{info, warn};
 
@@ -34,17 +35,9 @@ pub struct NatConfig {
 impl NatConfig {
     /// Build NAT configuration from backlog settings and optional external IP.
     pub fn new(bind_address: &str, port: u16, external: &str) -> Self {
-        let family = if bind_address.contains(':') {
-            AddrFamily::V6
-        } else {
-            AddrFamily::V4
-        };
+        let family = if bind_address.contains(':') { AddrFamily::V6 } else { AddrFamily::V4 };
 
-        let external_address = if external.is_empty() {
-            None
-        } else {
-            Some(external.to_string())
-        };
+        let external_address = if external.is_empty() { None } else { Some(external.to_string()) };
 
         Self {
             bind_address: bind_address.to_string(),
@@ -58,7 +51,8 @@ impl NatConfig {
     /// Resolve the listen socket address.
     pub fn listen_addr(&self) -> Result<SocketAddr> {
         let addr_str = format!("{}:{}", self.bind_address, self.listen_port);
-        addr_str.parse::<SocketAddr>()
+        addr_str
+            .parse::<SocketAddr>()
             .map_err(|e| anyhow::anyhow!("Invalid listen address '{}': {}", addr_str, e))
     }
 }
@@ -69,7 +63,7 @@ impl NatConfig {
 /// Many residential NAT gateways expire UDP/TCP bindings after 30-120s
 /// of inactivity; sending a keepalive every 15-30s maintains the mapping.
 #[cfg(unix)]
-pub fn set_nat_keepalive(socket: &tokio::net::TcpSocket, keepalive_secs: u64) -> Result<()> {
+pub fn set_nat_keepalive(socket: &tokio::net::TcpStream, keepalive_secs: u64) -> Result<()> {
     use std::os::unix::io::AsRawFd;
 
     let fd = socket.as_raw_fd();
@@ -77,14 +71,16 @@ pub fn set_nat_keepalive(socket: &tokio::net::TcpSocket, keepalive_secs: u64) ->
     // Enable SO_KEEPALIVE
     let keepalive: libc::c_int = 1;
     let ret = unsafe {
-        libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_KEEPALIVE,
-                         &keepalive as *const _ as *const libc::c_void,
-                         std::mem::size_of::<libc::c_int>() as libc::socklen_t)
+        libc::setsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_KEEPALIVE,
+            &keepalive as *const _ as *const libc::c_void,
+            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+        )
     };
     if ret != 0 {
-        warn!("Failed to set SO_KEEPALIVE (errno={})", unsafe {
-            *libc::__errno_location()
-        });
+        warn!("Failed to set SO_KEEPALIVE (errno={})", unsafe { *libc::__errno_location() });
     }
 
     // TCP_KEEPIDLE (seconds before sending keepalive probes)
@@ -92,9 +88,13 @@ pub fn set_nat_keepalive(socket: &tokio::net::TcpSocket, keepalive_secs: u64) ->
     {
         let idle: libc::c_int = keepalive_secs as libc::c_int;
         unsafe {
-            libc::setsockopt(fd, libc::IPPROTO_TCP, libc::TCP_KEEPIDLE,
-                             &idle as *const _ as *const libc::c_void,
-                             std::mem::size_of::<libc::c_int>() as libc::socklen_t);
+            libc::setsockopt(
+                fd,
+                libc::IPPROTO_TCP,
+                libc::TCP_KEEPIDLE,
+                &idle as *const _ as *const libc::c_void,
+                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            );
         }
     }
 
@@ -103,9 +103,13 @@ pub fn set_nat_keepalive(socket: &tokio::net::TcpSocket, keepalive_secs: u64) ->
     {
         let intvl: libc::c_int = 5;
         unsafe {
-            libc::setsockopt(fd, libc::IPPROTO_TCP, libc::TCP_KEEPINTVL,
-                             &intvl as *const _ as *const libc::c_void,
-                             std::mem::size_of::<libc::c_int>() as libc::socklen_t);
+            libc::setsockopt(
+                fd,
+                libc::IPPROTO_TCP,
+                libc::TCP_KEEPINTVL,
+                &intvl as *const _ as *const libc::c_void,
+                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+            );
         }
     }
 
@@ -115,25 +119,19 @@ pub fn set_nat_keepalive(socket: &tokio::net::TcpSocket, keepalive_secs: u64) ->
 
 /// Set TCP keepalive on Windows.
 #[cfg(windows)]
-pub fn set_nat_keepalive(socket: &tokio::net::TcpSocket, keepalive_secs: u64) -> Result<()> {
+pub fn set_nat_keepalive(socket: &tokio::net::TcpStream, keepalive_secs: u64) -> Result<()> {
     use std::os::windows::io::AsRawSocket;
-    use windows::Win32::Networking::WinSock::{
-        setsockopt, SOL_SOCKET, SO_KEEPALIVE, SOCKET,
-    };
 
-    let raw_socket = socket.as_raw_socket() as SOCKET;
+    use windows::Win32::Networking::WinSock::{SO_KEEPALIVE, SOCKET, SOL_SOCKET, setsockopt};
+
+    let raw_socket = SOCKET(socket.as_raw_socket() as usize);
     let keepalive: u32 = 1;
+    let optval = keepalive.to_ne_bytes();
 
     unsafe {
-        let ret = setsockopt(
-            raw_socket,
-            SOL_SOCKET,
-            SO_KEEPALIVE,
-            Some(&keepalive as *const _ as *const u8),
-            std::mem::size_of::<u32>() as i32,
-        );
+        let ret = setsockopt(raw_socket, SOL_SOCKET, SO_KEEPALIVE, Some(&optval[..]));
         if ret != 0 {
-            warn!("Failed to set SO_KEEPALIVE on Windows socket");
+            warn!("Failed to set SO_KEEPALIVE on Windows socket (ret={})", ret);
         }
     }
 
@@ -180,7 +178,7 @@ pub fn log_nat_status(config: &NatConfig) {
         && config.external_address.as_ref().map_or(true, |s| s.is_empty())
     {
         warn!(
-            "No external address set — peers behind NAT may not reach this bot's \
+            "No external address set : peers behind NAT may not reach this bot's \
              backlog on port {}. Set backlog.external_address in fish_mls_bot.toml",
             config.listen_port
         );

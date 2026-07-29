@@ -10,15 +10,13 @@ use std::env;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use fish_11_core::globals::{BUILD_DATE, BUILD_NUMBER, BUILD_TIME, BUILD_VERSION};
 use platform_types::{BOOL, DWORD, HWND};
 
-use std::sync::RwLock;
-
-// Global flags — must be defined before `mod helpers_cli` so the macro can see them
+// Global flags : must be defined before `mod helpers_cli` so the macro can see them
 pub(crate) static QUIET_MODE: RwLock<bool> = RwLock::new(false);
 static DEBUG_LOG_PATH: RwLock<Option<std::path::PathBuf>> = RwLock::new(None);
 
@@ -101,7 +99,8 @@ struct LoadInfo {
 // LoadDll: extern "stdcall" fn(*mut LOADINFO) -> BOOL
 type DllLoadFn = extern "system" fn(*mut LoadInfo) -> c_int;
 // mIRC DLL functions: extern "system" fn(HWND, HWND, *mut c_char, *mut c_char, BOOL, BOOL) -> c_int
-type DllFunctionFn = extern "system" fn(HWND, HWND, *mut c_char, *mut c_char, c_int, c_int) -> c_int;
+type DllFunctionFn =
+    extern "system" fn(HWND, HWND, *mut c_char, *mut c_char, c_int, c_int) -> c_int;
 
 /// This is used when the direct DLL call might hang (like FiSH11_FileListKeys with large DBs)
 fn call_dll_function(
@@ -227,7 +226,7 @@ fn call_dll_function(
 
         // If we reach here and the operation isn't complete, the timeout has been reached
         if !is_complete_clone.load(Ordering::SeqCst) {
-            // Always show timeout warnings, even in quiet mode — they are critical
+            // Always show timeout warnings, even in quiet mode : they are critical
             eprintln!("WARNING: function execution timed out after {:?}.", timeout);
             eprintln!("The DLL function may have hung, press Ctrl+c to break.");
         }
@@ -249,7 +248,7 @@ fn call_dll_function(
     // Mark operation as complete to stop the timer thread
     is_complete.store(true, Ordering::SeqCst);
 
-    // Wait for the timer thread to finish — it will exit promptly since is_complete is set
+    // Wait for the timer thread to finish : it will exit promptly since is_complete is set
     let _ = timer_handle.join();
 
     // Report how long it took
@@ -258,7 +257,7 @@ fn call_dll_function(
     // Log the result and buffer info
     info_print!("DLL function returned code : {}", result);
 
-    // Buffer preview — only in debug mode to avoid leaking sensitive data
+    // Buffer preview : only in debug mode to avoid leaking sensitive data
     if DEBUG_LOG_PATH.read().map(|g| g.is_some()).unwrap_or(false) && buffer_size > 0 {
         unsafe {
             let preview_size = 20.min(buffer_size);
@@ -282,12 +281,12 @@ fn call_dll_function(
         }
     }
 
-    // MIRC_HALT (0) = function failed/halted — no useful data in buffer
+    // MIRC_HALT (0) = function failed/halted : no useful data in buffer
     if result == 0 {
-        return Err("DLL function returned MIRC_HALT (0) — function failed or halted".into());
+        return Err("DLL function returned MIRC_HALT (0) : function failed or halted".into());
     }
 
-    // Unknown return code — warn but continue
+    // Unknown return code : warn but continue
     if result != 1 && result != 2 && result != 3 {
         info_print!("Warning: DLL function returned unusual value: {}", result);
     }
@@ -429,7 +428,7 @@ fn validate_user_input(input: &str) -> Result<(), String> {
 /// Sanitizes user input for DLL function calls.
 ///
 /// Strips control characters (except \r, \n, \t) and validates basic safety.
-/// Characters like `|`, `&`, `;`, `/`, `#` are intentionally kept — they are
+/// Characters like `|`, `&`, `;`, `/`, `#` are intentionally kept : they are
 /// valid in IRC channel names, nicknames, and messages.
 fn sanitize_dll_input(input: &str) -> Result<String, String> {
     validate_user_input(input)?;
@@ -450,7 +449,7 @@ fn sanitize_dll_input(input: &str) -> Result<String, String> {
 /// Validates DLL path.
 ///
 /// Only rejects null bytes and shell metacharacters. Path traversal (`..`) is
-/// allowed — the OS and `libloading` handle resolution safely, and rejecting
+/// allowed : the OS and `libloading` handle resolution safely, and rejecting
 /// legitimate absolute/relative paths is more harmful than useful.
 fn validate_dll_path(dll_path: &str) -> Result<(), String> {
     if dll_path.contains('\0') {
@@ -741,7 +740,7 @@ fn main() {
                 arg_index += 1;
             }
             "--debug" => {
-                // Create debug log file — only when explicitly requested
+                // Create debug log file : only when explicitly requested
                 let debug_path = std::path::PathBuf::from("fish11_cli_debug.log");
                 if let Ok(mut debug_log) = std::fs::File::create(&debug_path) {
                     use std::io::Write;
@@ -887,7 +886,7 @@ fn main() {
                 arg_index += 1;
             }
             _ => {
-                // Not an option — add to processed args after basic validation
+                // Not an option : add to processed args after basic validation
                 let arg = args[arg_index].clone();
                 if let Err(e) = validate_argument(&arg) {
                     println!("Invalid argument: {}", e);
@@ -986,7 +985,7 @@ fn main() {
         }
     };
 
-    // Prepare the LOADINFO structure — must match core.rs LOADINFO layout
+    // Prepare the LOADINFO structure : must match core.rs LOADINFO layout
     let mut load_info = LoadInfo {
         m_version: 0x00370007, // mIRC 7.73 encoded as DWORD
         m_hwnd: std::ptr::null_mut(),

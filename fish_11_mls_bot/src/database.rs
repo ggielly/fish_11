@@ -6,17 +6,15 @@
 //! §19.3 / §5.3: state at-rest MUST be encrypted. The encryption key is
 //! provided through the TOML configuration and MUST be at least 16 bytes.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use chacha20poly1305::{
-    ChaCha20Poly1305, KeyInit, Nonce, aead::{Aead, OsRng},
-};
-use hkdf::Hkdf;
-use sha2::Sha256;
+use chacha20poly1305::aead::Aead;
+use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
+use rand::RngCore;
+use rand::rngs::OsRng;
 use sled::{Db, Tree};
-use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 /// Database collection names
@@ -52,7 +50,7 @@ impl EncryptedStore {
         let db = sled::Config::new()
             .path(p)
             .cache_capacity(64 * 1024 * 1024) // 64 MiB cache
-            .flush_every_ms(Some(1000))       // Flush every second
+            .flush_every_ms(Some(1000)) // Flush every second
             .open()
             .with_context(|| format!("Failed to open Sled database at {}", p.display()))?;
 
@@ -71,10 +69,7 @@ impl EncryptedStore {
             db.open_tree(coll)?;
         }
 
-        Ok(Self {
-            db: Arc::new(db),
-            enc_key: Arc::new(*raw_key),
-        })
+        Ok(Self { db: Arc::new(db), enc_key: Arc::new(*raw_key) })
     }
 
     /// Flush the database to disk.
@@ -85,8 +80,7 @@ impl EncryptedStore {
 
     /// Get a tree handle by collection name
     fn tree(&self, name: &str) -> Result<Tree> {
-        self.db.open_tree(name)
-            .with_context(|| format!("Failed to open tree '{}'", name))
+        self.db.open_tree(name).with_context(|| format!("Failed to open tree '{}'", name))
     }
 
     /// Encrypt a plaintext value with an authenticated random nonce.
@@ -96,12 +90,10 @@ impl EncryptedStore {
         let cipher = ChaCha20Poly1305::new_from_slice(&self.enc_key[..])
             .map_err(|e| anyhow::anyhow!("Failed to create cipher: {}", e))?;
 
-        // Use HKDF to derive a sub-key scoped to "encryption"
-        // then generate a random nonce per record (standard AEAD practice)
+        // Generate a random nonce per record (standard AEAD practice)
         let nonce = {
             let mut n = [0u8; 12];
-            use rand::RngCore;
-            rand::rngs::OsRng.fill_bytes(&mut n);
+            OsRng.fill_bytes(&mut n);
             n
         };
 
@@ -137,8 +129,7 @@ impl EncryptedStore {
         blob.extend_from_slice(&ciphertext);
 
         let tree = self.tree(collection)?;
-        tree.insert(key, blob)
-            .map_err(|e| anyhow::anyhow!("Sled insert failed: {}", e))?;
+        tree.insert(key, blob).map_err(|e| anyhow::anyhow!("Sled insert failed: {}", e))?;
 
         debug!("Stored {} bytes in '{}' under key len={}", value.len(), collection, key.len());
         Ok(())
@@ -167,18 +158,15 @@ impl EncryptedStore {
     /// Delete a key from a collection.
     pub async fn delete(&self, collection: &str, key: &[u8]) -> Result<bool> {
         let tree = self.tree(collection)?;
-        let result = tree.remove(key)
-            .map_err(|e| anyhow::anyhow!("Sled remove failed: {}", e))?;
+        let result = tree.remove(key).map_err(|e| anyhow::anyhow!("Sled remove failed: {}", e))?;
         Ok(result.is_some())
     }
 
     /// List all keys in a collection.
     pub async fn list_keys(&self, collection: &str) -> Result<Vec<Vec<u8>>> {
         let tree = self.tree(collection)?;
-        let keys: Vec<Vec<u8>> = tree.iter()
-            .keys()
-            .filter_map(|r| r.ok().map(|iv| iv.to_vec()))
-            .collect();
+        let keys: Vec<Vec<u8>> =
+            tree.iter().keys().filter_map(|r| r.ok().map(|iv| iv.to_vec())).collect();
         Ok(keys)
     }
 
@@ -188,8 +176,7 @@ impl EncryptedStore {
         let mut results = Vec::new();
 
         for item in tree.iter() {
-            let (key, blob) = item
-                .map_err(|e| anyhow::anyhow!("Sled iteration failed: {}", e))?;
+            let (key, blob) = item.map_err(|e| anyhow::anyhow!("Sled iteration failed: {}", e))?;
 
             if blob.len() < 12 {
                 warn!("Skipping corrupted record in '{}'", collection);
@@ -256,17 +243,17 @@ impl EncryptedStore {
 
     /// Compact the database to reclaim space.
     pub fn compact(&self) -> Result<()> {
-        self.db.compact_range::<Vec<u8>, Vec<u8>>(..)
-            .context("Database compaction failed")?;
-        info!("Database compacted");
+        // In sled 0.34, compaction is primarily handled automatically.
+        // We trigger a flush which may initiate background compaction.
+        self.db.flush().context("Database compaction (flush) failed")?;
+        info!("Database flushed (compaction triggered)");
         Ok(())
     }
 
     /// Check if the database contains the given key.
     pub async fn contains(&self, collection: &str, key: &[u8]) -> Result<bool> {
         let tree = self.tree(collection)?;
-        tree.contains_key(key)
-            .map_err(|e| anyhow::anyhow!("Sled contains failed: {}", e))
+        tree.contains_key(key).map_err(|e| anyhow::anyhow!("Sled contains failed: {}", e))
     }
 }
 

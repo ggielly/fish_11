@@ -7,11 +7,9 @@
 mod integration_tests {
     use super::*;
     use crate::crypto::{blowfish, dh1080};
-    use crate::legacy::fish10_config::get_encrypt_topic_setting;
-    use crate::legacy::fish10_config::set_encrypt_topic_setting;
-    use crate::legacy::fish10_key_management;
+    use crate::legacy::fish10_config::{get_encrypt_topic_setting, set_encrypt_topic_setting};
     use crate::legacy::fish10_key_management::store_legacy_key;
-    use crate::legacy::fish10_message_detection;
+    use crate::legacy::{fish10_key_management, fish10_message_detection};
 
     /// Teardown: clear all legacy keys and DH1080 keys to prevent cross-test contamination
     fn teardown_legacy_state() {

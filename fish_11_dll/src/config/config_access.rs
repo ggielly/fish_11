@@ -5,7 +5,7 @@ use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use crate::config::CONFIG;
 use crate::config::file_storage::save_config;
 use crate::config::models::FishConfig;
-use crate::error::{FishError, Result};
+use crate::error::Result;
 use crate::{log_debug, log_error, log_info, log_warn};
 
 /// A read-only guard for the configuration

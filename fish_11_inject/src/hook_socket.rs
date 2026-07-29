@@ -237,7 +237,7 @@ pub unsafe extern "system" fn hooked_recv(
             }
         }
 
-        // Clear processed buffer — any incomplete trailing data was already preserved above.
+        // Clear processed buffer : any incomplete trailing data was already preserved above.
         socket_info.clear_processed_buffer();
 
         return bytes_to_copy as c_int;
@@ -318,7 +318,7 @@ pub unsafe extern "system" fn hooked_send(
             &data_slice[..preview_len]
         );
 
-        if let Ok(text) = std::str::from_utf8(data_slice) {}
+        if let Ok(_text) = std::str::from_utf8(data_slice) {}
     }
 
     if data_slice.len() > 128 {

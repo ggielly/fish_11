@@ -43,7 +43,7 @@ impl IrcClient {
     ///
     /// Connects to the configured IRC server, identifies, and processes
     /// messages until a shutdown signal is received or reconnection fails.
-    pub async fn run(&self, mut shutdown_rx: tokio::sync::mswc::Receiver<()>) -> Result<()> {
+    pub async fn run(&self, mut shutdown_rx: tokio::sync::mpsc::Receiver<()>) -> Result<()> {
         let mut attempt = 0u32;
 
         loop {
@@ -96,14 +96,17 @@ impl IrcClient {
             self.config.server.nickname,
         );
 
-        let mut client = Client::from_config(irc_config).await
+        let mut client = Client::from_config(irc_config)
+            .await
             .map_err(|e| anyhow!("Failed to create IRC client: {}", e))?;
 
-        client.identify()
-            .map_err(|e| anyhow!("Failed to identify on IRC: {}", e))?;
+        client.identify().map_err(|e| anyhow!("Failed to identify on IRC: {}", e))?;
 
-        info!("Connected to IRC as '{}'. Joining channels: {:?}",
-              client.current_nickname(), self.config.server.channels);
+        info!(
+            "Connected to IRC as '{}'. Joining channels: {:?}",
+            client.current_nickname(),
+            self.config.server.channels
+        );
 
         *attempt = 0;
         let mut stream = client.stream()?;
@@ -112,8 +115,13 @@ impl IrcClient {
             match message_result {
                 Ok(message) => {
                     handler::handle_irc_message(
-                        &client, &self.store, &self.bridge, &self.config, &message,
-                    ).await;
+                        &client,
+                        &self.store,
+                        &self.bridge,
+                        &self.config,
+                        &message,
+                    )
+                    .await;
                 }
                 Err(e) => {
                     warn!("IRC stream error: {}", e);

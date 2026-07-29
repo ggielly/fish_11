@@ -106,4 +106,7 @@ alias fish11_startup {
 
   ; Check if master key is unlocked, if not prompt user
   .fish11_check_masterkey
+
+  ; Initialize FCEP-2 device identity
+  .fish11_fcep2_init_device
 }

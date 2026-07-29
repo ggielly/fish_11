@@ -1,5 +1,6 @@
-pub use crate::channel_encryption::init_key::FiSH11_InitChannelKey;
-pub use crate::channel_encryption::process_key::FiSH11_ProcessChannelKey;
+// FCEP-1 channel encryption removed : replaced by FCEP-2 (MLS over IRC)
+// pub use crate::channel_encryption::init_key::FiSH11_InitChannelKey;
+// pub use crate::channel_encryption::process_key::FiSH11_ProcessChannelKey;
 pub use crate::crypto::dh1080::{
     FiSH10_DH1080_ComputeSecret, FiSH10_DH1080_GenerateKeyPair, FiSH10_DH1080_SetKey,
 };
@@ -60,6 +61,7 @@ pub use key_management::{FiSH11_ProcessPublicKey, FiSH11_TestCrypt};
 pub(crate) mod core;
 pub mod dll_error;
 pub mod fish11_exchangekey;
+pub mod fish11_fcep2;
 pub mod fish11_masterkey;
 pub mod fish11_setkey;
 pub mod fish11_setkeyfromplaintext;
@@ -73,6 +75,7 @@ pub use fish_11_core::globals::{
     MIRC_CONTINUE, MIRC_DLL_RESULT_PAYLOAD_CAP, MIRC_ERROR, MIRC_HALT, MIRC_IDENTIFIER,
     MIRC_TYPICAL_BUFFER_SIZE, NICK_VALIDATOR,
 };
+pub use fish11_fcep2::*;
 /// Returns the maximum amount of data that can be written into the output buffer (excluding the
 /// terminating NUL that mIRC reserves). Falls back to [`MIRC_BUFFER_SIZE`] when [`LOAD_INFO`](crate::dll_interface::core::LOAD_INFO) is unset.
 ///

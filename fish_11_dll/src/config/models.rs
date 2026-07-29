@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Security trade-off: Larger window = better reliability but slower FS.
 /// Set to 5 per RFC FCEP-1 Section 7.2 recommendation. This handles common
 /// IRC out-of-order scenarios (up to 5 messages displaced) while keeping
-/// the attack surface manageable — old keys are zeroized on eviction.
+/// the attack surface manageable : old keys are zeroized on eviction.
 const MAX_PREVIOUS_KEYS: usize = 5;
 
 /// Maximum number of nonces to cache per channel for replay detection.

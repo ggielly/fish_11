@@ -82,7 +82,7 @@ pub fn try_lock_timeout<T>(mutex: &Mutex<T>, timeout: Duration) -> TryLockResult
                 // A poisoned mutex indicates a prior panic while the lock was held.
                 // Recovering silently would risk using corrupted shared state.
                 // Panic here to surface the corruption immediately.
-                panic!("Mutex poisoned — aborting to prevent state corruption: {}", poisoned);
+                panic!("Mutex poisoned : aborting to prevent state corruption: {}", poisoned);
             }
             Err(std::sync::TryLockError::WouldBlock) => {
                 if start.elapsed() >= timeout {
@@ -115,7 +115,7 @@ pub fn try_lock_extended<T>(mutex: &Mutex<T>) -> TryLockResult<'_, T> {
 /// leaving shared state in an unknown/inconsistent condition. Continuing
 /// with potentially corrupted data is worse than crashing.
 pub fn handle_poison<T>(err: PoisonError<T>) -> T {
-    panic!("Mutex poisoned — aborting to prevent state corruption: {}", err);
+    panic!("Mutex poisoned : aborting to prevent state corruption: {}", err);
 }
 
 /// Safe access to the global ENGINES mutex with proper error handling.

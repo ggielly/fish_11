@@ -249,7 +249,7 @@ pub fn migrate_to_encrypted_format(
     password: &str,
     fish_ini_path: &Path
 ) -> Result<MigrationReport, MigrationError> {
-    // 1. Backup fish.ini → fish.ini.backup
+    // 1. Backup fish.ini => fish.ini.backup
     // 2. Lire clés en clair
     // 3. Générer salt + dériver Master Key
     // 4. Créer génération 0 pour toutes les clés

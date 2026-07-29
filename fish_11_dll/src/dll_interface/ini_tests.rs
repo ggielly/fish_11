@@ -222,7 +222,7 @@ mod tests {
     fn test_ini_setint_invalid_value() {
         setup_test_config();
         let (result_code, result) = call_dll_function(INI_SetInt as _, "mark_position invalid");
-        // InvalidInput is classified as non-fatal by to_mirc_response → MIRC_COMMAND (not MIRC_ERROR)
+        // InvalidInput is classified as non-fatal by to_mirc_response => MIRC_COMMAND (not MIRC_ERROR)
         assert_eq!(result_code, crate::dll_interface::MIRC_COMMAND);
         assert!(result.to_lowercase().contains("invalid"));
     }

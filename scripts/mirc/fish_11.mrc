@@ -111,6 +111,9 @@ alias fish11_startup {
 
   ; Check if master key is unlocked, if not prompt user
   .fish11_check_masterkey
+
+  ; Initialize FCEP-2 device identity
+  .fish11_fcep2_init_device
 }
 
 
@@ -1735,6 +1738,24 @@ menu channel {
   .Add a channel key encryption
   ..Manual key : fish11_set_manual_key_dialog $chan
   ..FCEP-1 key : fish11_init_fcep_dialog $chan
+  ..FCEP-2 group : fish11_fcep2_create_group $chan
+  .FCEP-2 group management
+  ..Show group state : fish11_fcep2_state $chan
+  ..Sync group : fish11_fcep2_sync $chan
+  ..Export group state : fish11_fcep2_export $chan
+  ..Import group state :{ var %data = $?="Enter base64 export data:" | if (%data) fish11_fcep2_import $chan %data }
+  ..-
+  ..Add member :{ var %kp = $?="Enter KeyPackage (base64):" | if (%kp) { fish11_fcep2_propose $chan ADD %kp | fish11_fcep2_commit $chan } }
+  ..Remove member :{ var %dev = $?="Enter device ID (hex):" | if (%dev) fish11_fcep2_remove $chan %dev }
+  ..-
+  ..Set encryption policy
+  ...Always encrypt : fish11_fcep2_policy $chan ALWAYS
+  ...Require all members : fish11_fcep2_policy $chan REQUIRE_ALL
+  ...Best effort : fish11_fcep2_policy $chan BEST_EFFORT
+  ...Disabled : fish11_fcep2_policy $chan DISABLED
+  ..-
+  ..Resolve conflict : fish11_fcep2_resolve $chan
+  ..Show diagnostics : fish11_fcep2_diag 10
   .Encrypt topic
   ..Enable topic encryption :fish11_SetChannelIniValue $chan encrypt_topic 1
   ..Disable topic encryption :fish11_SetChannelIniValue $chan encrypt_topic 0
@@ -1878,6 +1899,21 @@ menu status,channel,nicklist,query {
   .Core version :fish11_version
   .Injection version : fish11_injection_version
   .Help :fish11_help
+  .-
+  .FCEP-2 (MLS)
+  ..FCEP-2 Help :fish11_fcep2_help
+  ..Initialize device :fish11_fcep2_init_device
+  ..Generate KeyPackage :fish11_fcep2_gen_keypackage
+  ..Fill KeyPackage pool :fish11_fcep2_fill_pool
+  ..-
+  ..Create FCEP-2 group :{ if ($window($active).type == channel) { fish11_fcep2_create_group $active } else { echo $color(Mode text) -at *** FiSH_11: select a channel first } }
+  ..Show group state :{ if ($window($active).type == channel) { fish11_fcep2_state $active } else { echo $color(Mode text) -at *** FiSH_11: select a channel first } }
+  ..Sync group :{ if ($window($active).type == channel) { fish11_fcep2_sync $active } else { echo $color(Mode text) -at *** FiSH_11: select a channel first } }
+  ..-
+  ..Export group state :{ if ($window($active).type == channel) { fish11_fcep2_export $active } else { echo $color(Mode text) -at *** FiSH_11: select a channel first } }
+  ..Import group state :{ if ($window($active).type == channel) { var %data = $?="Enter base64 export data:" | if (%data) fish11_fcep2_import $active %data } else { echo $color(Mode text) -at *** FiSH_11: select a channel first } }
+  ..-
+  ..Show diagnostics :fish11_fcep2_diag 10
   .-
   .Master key
   ..Unlock master key :fish11_unlock
@@ -2452,3 +2488,251 @@ alias fish11_stats {
 
 ; Short alias for statistics
 alias fish_stats { fish11_stats }
+
+
+; ***********************************************************************************
+; === FCEP-2 (MLS over IRC Transport Profile) ===
+; ***********************************************************************************
+
+; === FCEP-2 DEVICE INITIALIZATION ===
+alias fish11_fcep2_init_device {
+  var %label = $iif($1-, $1-, mIRC_User)
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_InitDevice, %label)
+  if ($left(%result, 2) == OK) {
+    var %dev_id = $gettok(%result, 2, 32)
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: device initialized (id: %dev_id $+ )
+    set %fcep2.device_id %dev_id
+  }
+  else {
+    echo 4 -ts *** FiSH_11 FCEP-2 ERROR: failed to initialize device: %result
+  }
+}
+
+; === FCEP-2 GROUP CREATION ===
+alias fish11_fcep2_create_group {
+  if (!$1) { echo 4 -a Syntax: /fcep2_create <#channel> [keypackage1] ... | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_CreateGroup, $1-)
+  if ($left(%result, 12) == GROUP_CREATED) {
+    var %gid = $gettok(%result, 2, 32)
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: group created for $1 (gid: %gid $+ )
+    set %fcep2.group. $+ [ $1 ] %gid
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 KEYPACKAGE GENERATION ===
+alias fish11_fcep2_gen_keypackage {
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_GenKeyPackage, $iif($1-, $1-, mIRC_User))
+  if ($left(%result, 11) == KEYPACKAGE) {
+    var %kp = $gettok(%result, 2, 32)
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: KeyPackage generated
+    return %kp
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result | return $null }
+}
+
+; === FCEP-2 ENCRYPT ===
+alias fish11_fcep2_encrypt {
+  if (!$1 || !$2-) { echo 4 -a Syntax: /fcep2_encrypt <#channel> <message> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_EncryptMsg, $1 $2-)
+  if (%result != $null && $left(%result, 5) != Error) { return %result }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result | return $null }
+}
+
+; === FCEP-2 DECRYPT ===
+alias fish11_fcep2_decrypt {
+  if (!$1 || !$2-) { echo 4 -a Syntax: /fcep2_decrypt <#channel> <fcep2_line> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_DecryptMsg, $1 $2-)
+  if (%result != $null && $left(%result, 6) != Error:) { return %result }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result | return $null }
+}
+
+; === FCEP-2 PROCESS INCOMING ===
+alias -l fish11_fcep2_process {
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_ProcessMessage, $1 $2 $3-)
+  if ($left(%result, 9) == DECRYPTED) {
+    var %chan = $gettok(%result, 3, 32)
+    var %plaintext = $gettok(%result, 4-, 32)
+    echo $color(Message text) -dm %chan *** $gettok(%result, 2, 32) $+ : %plaintext
+  }
+  else if ($left(%result, 6) == JOINED) {
+    var %chan = $gettok(%result, 2, 32)
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: joined group for %chan
+    set %fcep2.group. $+ [ %chan ] $gettok(%result, 3, 32)
+  }
+  else if ($left(%result, 13) == COMMIT_APPLIED) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: commit applied, epoch= $+ $gettok(%result, 2, 61)
+  }
+  else if ($left(%result, 16) == CONFLICT_DETECTED) {
+    echo 4 -ts *** FiSH_11 FCEP-2 WARNING: commit conflict detected!
+  }
+}
+
+; === FCEP-2 PROPOSAL ===
+alias fish11_fcep2_propose {
+  if (!$1 || !$2) { echo 4 -a Syntax: /fcep2_propose <#channel> <ADD|REMOVE|UPDATE> [arg] | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_SubmitProposal, $1-)
+  if ($left(%result, 15) == PROPOSAL_CACHED) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: proposal cached (pending: $gettok(%result, 3, 32) $+ )
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 COMMIT ===
+alias fish11_fcep2_commit {
+  if (!$1) { echo 4 -a Syntax: /fcep2_commit <#channel> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_SendCommit, $1)
+  if ($left(%result, 12) == COMMIT_SENT) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: commit sent, epoch= $+ $gettok(%result, 2, 61)
+    var %envelopes = $gettok(%result, 3-, 32)
+    if (%envelopes != $null) { .msg $1 %envelopes }
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 REMOVE DEVICE ===
+alias fish11_fcep2_remove {
+  if (!$1 || !$2) { echo 4 -a Syntax: /fcep2_remove <#channel> <device_id_hex> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_RemoveDevice, $1 $2)
+  if ($left(%result, 18) == REMOVAL_COMMITTED) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: device removed, epoch= $+ $gettok(%result, 2, 61)
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 SYNC ===
+alias fish11_fcep2_sync {
+  if (!$1) { echo 4 -a Syntax: /fcep2_sync <#channel> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_SyncGroup, $1)
+  if ($left(%result, 12) == SYNC_REQUEST) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: sync request generated
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: $gettok(%result, 2-, 32)
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 GROUP STATE ===
+alias fish11_fcep2_state {
+  if (!$1) { echo 4 -a Syntax: /fcep2_state <#channel> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_GetGroupState, $1)
+  if ($left(%result, 5) == STATE) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2 Group State:
+    echo $color(Mode text) -ts   Channel: $gettok(%result, 2, 61)
+    echo $color(Mode text) -ts   Group ID: $gettok(%result, 4, 61)
+    echo $color(Mode text) -ts   Epoch: $gettok(%result, 6, 61)
+    echo $color(Mode text) -ts   In Conflict: $gettok(%result, 8, 61)
+  }
+  else if ($left(%result, 8) == NO_GROUP) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: no group for $1
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 RESOLVE CONFLICT ===
+alias fish11_fcep2_resolve {
+  if (!$1) { echo 4 -a Syntax: /fcep2_resolve <#channel> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_ResolveConflict, $1)
+  if ($left(%result, 2) == OK) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: conflict resolved for $1
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 SET TRUST ===
+alias fish11_fcep2_trust {
+  if (!$1 || !$2) { echo 4 -a Syntax: /fcep2_trust <device_id_hex> <UNKNOWN|TOFU|VERIFIED|CHANGED|REVOKED> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_SetTrust, $1 $2)
+  if ($left(%result, 2) == OK) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: trust set to $2 for $1
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 EXPORT STATE ===
+alias fish11_fcep2_export {
+  if (!$1) { echo 4 -a Syntax: /fcep2_export <#channel> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_ExportState, $1)
+  if ($left(%result, 6) == EXPORT) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: state exported for $1
+    clipboard $gettok(%result, 2, 32)
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: export data copied to clipboard
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 IMPORT STATE ===
+alias fish11_fcep2_import {
+  if (!$1 || !$2) { echo 4 -a Syntax: /fcep2_import <#channel> <base64_data> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_ImportState, $1 $2-)
+  if ($left(%result, 8) == IMPORTED) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: state imported for $1 (epoch= $+ $gettok(%result, 2, 61) $+ , members= $+ $gettok(%result, 4, 61) $+ )
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 FILL POOL ===
+alias fish11_fcep2_fill_pool {
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_FillKeyPackagePool, $iif($1, $1, 10))
+  if ($left(%result, 11) == POOL_FILLED) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: pool filled ($gettok(%result, 2, 61) generated, $gettok(%result, 4, 61) ready)
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 SET POLICY ===
+alias fish11_fcep2_policy {
+  if (!$1 || !$2) { echo 4 -a Syntax: /fcep2_policy <#channel> <ALWAYS|REQUIRE_ALL|BEST_EFFORT|DISABLED> | return }
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_SetEncryptionPolicy, $1 $2)
+  if ($left(%result, 10) == POLICY_SET) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2: policy set to $2 for $1
+  }
+  else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
+}
+
+; === FCEP-2 DIAGNOSTICS ===
+alias fish11_fcep2_diag {
+  var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_GetDiagnostics, * $iif($1, $1, 10))
+  if ($left(%result, 10) == DIAGNOSTICS) {
+    echo $color(Mode text) -ts *** FiSH_11 FCEP-2 Diagnostics ($gettok(%result, 2, 32) events):
+  }
+  else { echo $color(Mode text) -ts *** FiSH_11 FCEP-2: no diagnostics available }
+}
+
+; === FCEP-2 HELP ===
+alias fish11_fcep2_help {
+  echo $color(Mode text) -ts *** FiSH_11 FCEP-2 Commands:
+  echo $color(Mode text) -ts   /fcep2_create <#channel>        - Create FCEP-2 group
+  echo $color(Mode text) -ts   /fcep2_genkeypackage            - Generate KeyPackage
+  echo $color(Mode text) -ts   /fcep2_encrypt <#channel> <msg> - Encrypt message
+  echo $color(Mode text) -ts   /fcep2_decrypt <#channel> <line> - Decrypt FCEP-2 line
+  echo $color(Mode text) -ts   /fcep2_propose <#channel> <OP>  - Submit proposal
+  echo $color(Mode text) -ts   /fcep2_commit <#channel>        - Send commit
+  echo $color(Mode text) -ts   /fcep2_remove <#channel> <dev>  - Remove device
+  echo $color(Mode text) -ts   /fcep2_sync <#channel>          - Request sync
+  echo $color(Mode text) -ts   /fcep2_state <#channel>         - Show group state
+  echo $color(Mode text) -ts   /fcep2_resolve <#channel>       - Resolve conflict
+  echo $color(Mode text) -ts   /fcep2_trust <dev> <STATE>      - Set device trust
+  echo $color(Mode text) -ts   /fcep2_export <#channel>        - Export group state
+  echo $color(Mode text) -ts   /fcep2_import <#channel> <data> - Import group state
+  echo $color(Mode text) -ts   /fcep2_fillpool [count]         - Fill KeyPackage pool
+  echo $color(Mode text) -ts   /fcep2_policy <#channel> <POL>  - Set encryption policy
+  echo $color(Mode text) -ts   /fcep2_diag [count]             - Show diagnostics
+  echo $color(Mode text) -ts   /fcep2_help                     - Show this help
+}
+
+; === FCEP-2 INCOMING NOTICE HANDLER ===
+on ^*:NOTICE:+FCEP2 *:?:{
+  var %result = $fish11_fcep2_process($nick, $me, $1-)
+  if (%result != $null) {
+    echo $color(Mode text) -dm $nick *** FCEP-2: %result
+  }
+  halt
+}
+
+; === FCEP-2 INCOMING CHANNEL MESSAGE HANDLER ===
+on *:TEXT:+FCEP2 *:#:{
+  var %result = $fish11_fcep2_process($nick, $chan, $1-)
+  if (%result != $null) {
+    echo $color(Message text) -dm $chan *** FCEP-2: %result
+  }
+}

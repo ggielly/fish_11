@@ -10,14 +10,14 @@ use crate::master_key::keystore::Keystore;
 const ENCRYPTED_KEYSTORE_HEADER: &str = "# FiSH_11_ENCRYPTED_KEYSTORE_V1\n";
 
 pub fn derive_system_specific_key() -> Result<[u8; 32], Box<dyn std::error::Error>> {
-    use sha2::{Digest, Sha256};
     use std::env;
+
+    use sha2::{Digest, Sha256};
 
     let hostname = env::var("COMPUTERNAME").or_else(|_| env::var("HOSTNAME")).unwrap_or_default();
     let username = env::var("USERNAME").or_else(|_| env::var("USER")).unwrap_or_default();
-    let current_dir = env::current_dir()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let current_dir =
+        env::current_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
 
     let mut seed = String::new();
     seed.push_str(&hostname);

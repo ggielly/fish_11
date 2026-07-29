@@ -3,11 +3,12 @@
 //! This module provides the DLL interface for setting plaintext topics in the configuration.
 //! It allows users to save topics in plaintext format via the mIRC script.
 
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::os::raw::c_char;
 
+use crate::dll_interface::get_buffer_size;
 use crate::unified_error::{DllError, DllResult};
-use crate::{buffer_utils, config, dll_interface::get_buffer_size};
+use crate::{buffer_utils, config};
 
 /// DLL function to set a plaintext topic for a channel
 ///
@@ -247,31 +248,28 @@ mod tests {
         let channel = "#roundtrip_test";
         let topic = "Hello roundtrip world!";
 
-        config::with_config_mut(|config| {
-            config::topics::set_topic(config, channel, topic)
-        }).unwrap();
+        config::with_config_mut(|config| config::topics::set_topic(config, channel, topic))
+            .unwrap();
 
-        let result = config::with_config(|config| {
-            config::topics::get_topic(config, channel)
-        }).unwrap();
+        let result =
+            config::with_config(|config| config::topics::get_topic(config, channel)).unwrap();
         assert_eq!(result, Some(topic.to_string()));
 
-        let removed = config::with_config_mut(|config| {
-            config::topics::remove_topic(config, channel)
-        }).unwrap();
+        let removed =
+            config::with_config_mut(|config| config::topics::remove_topic(config, channel))
+                .unwrap();
         assert!(removed);
 
-        let result = config::with_config(|config| {
-            config::topics::get_topic(config, channel)
-        }).unwrap();
+        let result =
+            config::with_config(|config| config::topics::get_topic(config, channel)).unwrap();
         assert_eq!(result, None);
     }
 
     #[test]
     fn test_get_topic_nonexistent_returns_none() {
-        let result = config::with_config(|config| {
-            config::topics::get_topic(config, "#nonexistent_channel")
-        }).unwrap();
+        let result =
+            config::with_config(|config| config::topics::get_topic(config, "#nonexistent_channel"))
+                .unwrap();
         assert_eq!(result, None);
     }
 
@@ -279,7 +277,8 @@ mod tests {
     fn test_remove_topic_nonexistent_returns_false() {
         let removed = config::with_config_mut(|config| {
             config::topics::remove_topic(config, "#nonexistent_channel")
-        }).unwrap();
+        })
+        .unwrap();
         assert!(!removed);
     }
 }

@@ -217,6 +217,18 @@ pub enum DllError {
     #[error("internal error: {0}")]
     Internal(String),
 
+    /// General processing error
+    #[error("processing error: {0}")]
+    ProcessingError(String),
+
+    /// TLS codec serialization/deserialization error
+    #[error("TLS codec error: {0}")]
+    TlsCodec(String),
+
+    /// Master key is locked
+    #[error("master key is locked")]
+    MasterKeyLocked,
+
     /// Feature not implemented
     #[error("not implemented: {0}")]
     NotImplemented(String),

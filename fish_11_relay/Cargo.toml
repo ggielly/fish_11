@@ -1,0 +1,25 @@
+[package]
+name = "fish_11_relay"
+version = "11.26.0"
+edition = "2021"
+description = "FiSH_11 - FCEP-2 IRC synchronizer and relay bot"
+license = "GPL-3.0-or-later"
+authors = ["GuY"]
+
+[dependencies]
+tokio = { version = "1.40", features = ["full"] }
+irc = "1.1.0"
+futures = "0.3"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+chrono = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+anyhow = "1.0"
+base64 = "0.22"
+hex = "0.4"
+libloading = "0.8"
+fish_11 = { path = "../fish_11_dll" }
+serde_json = "1.0.151"

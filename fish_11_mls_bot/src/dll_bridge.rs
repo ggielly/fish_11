@@ -9,6 +9,7 @@
 use std::ffi::{CStr, CString, c_char};
 use std::os::raw::c_int;
 use std::path::Path;
+
 use anyhow::{Result, anyhow};
 use tracing::{info, warn};
 
@@ -74,7 +75,8 @@ impl DllBridge {
         if let Some(ref lib) = self.loaded_lib {
             let c_fn_name = CString::new(fn_name)?;
             unsafe {
-                let func: libloading::Symbol<MircDllFn> = lib.get(c_fn_name.as_bytes_with_nul())
+                let func: libloading::Symbol<MircDllFn> = lib
+                    .get(c_fn_name.as_bytes_with_nul())
                     .map_err(|e| anyhow!("DLL symbol '{}' not found: {}", fn_name, e))?;
 
                 let null_hwnd: *mut *mut std::ffi::c_void = std::ptr::null_mut();
@@ -83,10 +85,12 @@ impl DllBridge {
                 let null_nopause: *mut c_int = std::ptr::null_mut();
 
                 let ret_code = func(
-                    null_hwnd, null_hwnd,
+                    null_hwnd,
+                    null_hwnd,
                     buffer.as_mut_ptr() as *mut c_char,
                     null_parms,
-                    null_show, null_nopause,
+                    null_show,
+                    null_nopause,
                 );
 
                 let c_out = CStr::from_ptr(buffer.as_ptr() as *const c_char);
@@ -108,7 +112,8 @@ impl DllBridge {
                 let _ = buffer;
                 Err(anyhow!(
                     "No external DLL loaded and 'integrated' feature not enabled. \
-                     Cannot call '{}'", fn_name
+                     Cannot call '{}'",
+                    fn_name
                 ))
             }
         }
@@ -131,40 +136,112 @@ fn call_internal_dll_fn(fn_name: &str, data: *mut c_char) -> Result<String> {
     let null_nopause: *mut c_int = std::ptr::null_mut();
 
     let ret_code = match fn_name {
-        "FiSH11_FCEP2_InitDevice" =>
-            FiSH11_FCEP2_InitDevice(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_GenKeyPackage" =>
-            FiSH11_FCEP2_GenKeyPackage(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_CreateGroup" =>
-            FiSH11_FCEP2_CreateGroup(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_ProcessMessage" =>
-            FiSH11_FCEP2_ProcessMessage(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_EncryptMsg" =>
-            FiSH11_FCEP2_EncryptMsg(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_DecryptMsg" =>
-            FiSH11_FCEP2_DecryptMsg(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_GetGroupState" =>
-            FiSH11_FCEP2_GetGroupState(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_ResolveConflict" =>
-            FiSH11_FCEP2_ResolveConflict(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_SetTrust" =>
-            FiSH11_FCEP2_SetTrust(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_SubmitProposal" =>
-            FiSH11_FCEP2_SubmitProposal(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_SendCommit" =>
-            FiSH11_FCEP2_SendCommit(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_RemoveDevice" =>
-            FiSH11_FCEP2_RemoveDevice(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_SyncGroup" =>
-            FiSH11_FCEP2_SyncGroup(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_ProcessSync" =>
-            FiSH11_FCEP2_ProcessSync(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_ExportState" =>
-            FiSH11_FCEP2_ExportState(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_ImportState" =>
-            FiSH11_FCEP2_ImportState(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
-        "FiSH11_FCEP2_RequestKeyPackage" =>
-            FiSH11_FCEP2_RequestKeyPackage(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause),
+        "FiSH11_FCEP2_InitDevice" => {
+            FiSH11_FCEP2_InitDevice(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause)
+        }
+        "FiSH11_FCEP2_GenKeyPackage" => FiSH11_FCEP2_GenKeyPackage(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
+        "FiSH11_FCEP2_CreateGroup" => FiSH11_FCEP2_CreateGroup(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
+        "FiSH11_FCEP2_ProcessMessage" => FiSH11_FCEP2_ProcessMessage(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
+        "FiSH11_FCEP2_EncryptMsg" => {
+            FiSH11_FCEP2_EncryptMsg(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause)
+        }
+        "FiSH11_FCEP2_DecryptMsg" => {
+            FiSH11_FCEP2_DecryptMsg(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause)
+        }
+        "FiSH11_FCEP2_GetGroupState" => FiSH11_FCEP2_GetGroupState(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
+        "FiSH11_FCEP2_ResolveConflict" => FiSH11_FCEP2_ResolveConflict(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
+        "FiSH11_FCEP2_SetTrust" => {
+            FiSH11_FCEP2_SetTrust(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause)
+        }
+        "FiSH11_FCEP2_SubmitProposal" => FiSH11_FCEP2_SubmitProposal(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
+        "FiSH11_FCEP2_SendCommit" => {
+            FiSH11_FCEP2_SendCommit(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause)
+        }
+        "FiSH11_FCEP2_RemoveDevice" => FiSH11_FCEP2_RemoveDevice(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
+        "FiSH11_FCEP2_SyncGroup" => {
+            FiSH11_FCEP2_SyncGroup(null_hwnd, null_hwnd, data, null_parms, null_show, null_nopause)
+        }
+        "FiSH11_FCEP2_ProcessSync" => FiSH11_FCEP2_ProcessSync(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
+        "FiSH11_FCEP2_ExportState" => FiSH11_FCEP2_ExportState(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
+        "FiSH11_FCEP2_ImportState" => FiSH11_FCEP2_ImportState(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
+        "FiSH11_FCEP2_RequestKeyPackage" => FiSH11_FCEP2_RequestKeyPackage(
+            null_hwnd,
+            null_hwnd,
+            data,
+            null_parms,
+            null_show,
+            null_nopause,
+        ),
         _ => return Err(anyhow!("Unknown DLL function: {}", fn_name)),
     };
 

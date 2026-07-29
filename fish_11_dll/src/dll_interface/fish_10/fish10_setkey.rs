@@ -9,7 +9,7 @@ use std::os::raw::c_int;
 use crate::dll_interface::utility;
 use crate::platform_types::{BOOL, HWND};
 use crate::unified_error::DllError;
-use crate::{buffer_utils, dll_function_identifier, legacy, log_debug, log_info, log_warn};
+use crate::{buffer_utils, dll_function_identifier, legacy, log_debug, log_info};
 
 dll_function_identifier!(FiSH10_SetKey, data, {
     // Parse input: <target> <key>

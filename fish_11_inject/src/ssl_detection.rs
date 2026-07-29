@@ -103,7 +103,7 @@ unsafe fn find_ssl_functions(module: HMODULE) -> Option<(*const u8, *const u8)> 
 
     // SAFETY: Both ssl_read and ssl_write are guaranteed Some by the is_none() check above.
     // We transmute to *const u8 for address comparison / raw pointer storage.
-    // These are not called through this pointer — actual calls go through the
+    // These are not called through this pointer : actual calls go through the
     // generic_detour trampoline installed elsewhere.
     let read_ptr: *const u8 = std::mem::transmute(ssl_read.unwrap());
     let write_ptr: *const u8 = std::mem::transmute(ssl_write.unwrap());

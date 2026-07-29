@@ -49,14 +49,22 @@ on *:INPUT:*: {
   }
   
   ; Determine which encryption system to use
-  ; Check for: FCEP-1 channel key, manual channel key, legacy key, or private key
+  ; Check for: FCEP-2 group, FCEP-1 channel key, manual channel key, legacy key, or private key
   
   var %encrypted = $null
   
-  ; Check if target is a channel with FCEP-1 or manual key
+  ; Check if target is a channel with FCEP-2 group
   if ($left(%target, 1) == # || $left(%target, 1) == &) {
-    ; Channel target - try FiSH 11 encryption (handles both manual and FCEP-1 keys)
-    %encrypted = $dll(%Fish11DllFile, FiSH11_EncryptMsg, %target %message)
+    ; Check for FCEP-2 group first
+    var %fcep2_gid = $dll(%Fish11DllFile, FiSH11_FCEP2_GetGroupState, %target)
+    if ($left(%fcep2_gid, 5) == STATE) {
+      ; FCEP-2 group exists - use FCEP-2 encryption
+      %encrypted = $dll(%Fish11DllFile, FiSH11_FCEP2_EncryptMsg, %target %message)
+    }
+    else {
+      ; No FCEP-2 group - try FiSH 11 encryption (handles both manual and FCEP-1 keys)
+      %encrypted = $dll(%Fish11DllFile, FiSH11_EncryptMsg, %target %message)
+    }
   }
   else {
     ; Private message - check for legacy key first

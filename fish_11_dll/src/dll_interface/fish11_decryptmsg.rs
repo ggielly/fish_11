@@ -4,7 +4,7 @@ use std::os::raw::c_int;
 use crate::dll_interface::utility;
 use crate::platform_types::{BOOL, HWND};
 use crate::unified_error::DllError;
-use crate::{buffer_utils, config, crypto, dll_function_identifier, log_debug, log_info};
+use crate::{buffer_utils, config, crypto, dll_function_identifier, log_debug};
 
 /* list of stuff we possibly need to decrypt:
         :nick!ident@host PRIVMSG #chan :+FISH 2T5zD0mPgMn
@@ -101,7 +101,7 @@ dll_function_identifier!(FiSH11_DecryptMsg, data, {
                 })?;
 
             // Anti-replay check using per-channel nonce cache (RFC FCEP-1 §6.3)
-            // The global NONCE_CACHE is NOT used here — we use the channel-partitioned
+            // The global NONCE_CACHE is NOT used here : we use the channel-partitioned
             // cache to prevent cross-channel nonce collision blocking legitimate messages.
             if config::state_management::check_nonce(target, &nonce)? {
                 return Err(DllError::ReplayAttackDetected { channel: target.to_string() });
@@ -199,7 +199,7 @@ dll_function_identifier!(FiSH11_DecryptMsg, data, {
     // 2. Retrieve the encryption key for the target.
     use zeroize::Zeroizing;
     let key = Zeroizing::new(utility::get_private_key(&nickname)?);
-    let key_ref = &key;
+    let _key_ref = &key;
 
     #[cfg(debug_assertions)]
     log_debug!("Successfully retrieved decryption key");

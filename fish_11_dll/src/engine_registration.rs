@@ -219,6 +219,13 @@ fn attempt_encryption(line: &str, network_name: Option<&str>) -> Option<String> 
         return None;
     }
 
+    // Skip FCEP-2 messages - they are already encrypted by the FCEP-2 protocol
+    if message.starts_with("+FCEP2 ") {
+        #[cfg(debug_assertions)]
+        log_debug!("Engine: skipping FCEP-2 message (already encrypted by FCEP-2)");
+        return None;
+    }
+
     // Extract target from command part
     // Could be "PRIVMSG #channel" or ":prefix PRIVMSG #channel"
     let (target_part, is_topic) = if let Some(privmsg_pos) = cmd_part.find(" PRIVMSG ") {
@@ -784,6 +791,14 @@ fn attempt_decryption(line: &str, network: Option<&str>) -> Option<String> {
     if line.contains("X25519_INIT:") || line.contains("X25519_FINISH") {
         #[cfg(debug_assertions)]
         log_debug!("Engine: ignoring key exchange message (X25519_INIT/FINISH)");
+        return None;
+    }
+
+    // CRITICAL: do NOT decrypt FCEP-2 messages
+    // +FCEP2 lines must pass through unchanged so mIRC script handlers can process them
+    if line.contains("+FCEP2 ") {
+        #[cfg(debug_assertions)]
+        log_debug!("Engine: passing through FCEP-2 message for mIRC script processing");
         return None;
     }
 

@@ -39,6 +39,12 @@ hex = "0.4"
 # DLL loading (same as fish_11_relay)
 libloading = "0.8"
 
+# Random (for nonce generation in database encryption)
+rand = "0.8"
+
+# File logging (same as fish_11_relay)
+tracing-appender = "0.2"
+
 # Local DLL crate for integrated (non-Windows) mode
 fish_11 = { path = "../fish_11_dll", optional = true }
 
@@ -50,6 +56,9 @@ chacha20poly1305 = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
 
+# OnceCell for lazy statics
+once_cell = "1.20"
+
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 
@@ -60,6 +69,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Windows-specific: Named pipe or event for daemon signal
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
+    "Win32_Networking_WinSock",
     "Win32_System_Threading",
     "Win32_System_Console",
 ] }
