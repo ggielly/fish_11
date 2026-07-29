@@ -316,10 +316,10 @@ alias fish11_showkey {
     if (%ttl == EXPIRED) {
       aline @FiSH-Key Status: EXPIRED - use /fish11_X25519_INIT %cur_contact to renew
     }
-    else if (%ttl == NO_TTL) {
+    elseif (%ttl == NO_TTL) {
       aline @FiSH-Key Status: No expiration (manually set key)
     }
-    else if (%ttl isnum) {
+    elseif (%ttl isnum) {
       var %hours = $int($calc(%ttl / 3600))
       var %mins = $int($calc((%ttl % 3600) / 60))
       aline @FiSH-Key Status: Expires in %hours hours %mins minutes
@@ -385,10 +385,10 @@ alias fish11_keyttl {
     echo $color(Error) -at *** FiSH_11: key for %nickname has EXPIRED
     echo $color(Mode text) -at *** FiSH_11: use /fish11_X25519_INIT %nickname to establish a new key
   }
-  else if (%ttl == NO_TTL) {
+  elseif (%ttl == NO_TTL) {
     echo $color(Mode text) -at *** FiSH_11: key for %nickname has no expiration (manually set key)
   }
-  else if (%ttl isnum) {
+  elseif (%ttl isnum) {
     var %hours = $int($calc(%ttl / 3600))
     var %mins = $int($calc((%ttl % 3600) / 60))
     echo $color(Mode text) -at *** FiSH_11: key for %nickname expires in %hours hours %mins minutes
@@ -742,7 +742,7 @@ on *:INPUT:*: {
     %message = $3-
   }
   ; Handle /me actions
-  else if ($1 == /me) {
+  elseif ($1 == /me) {
     ; Check if actions should be encrypted
     var %encrypt_action = $dll(%Fish11DllFile, INI_GetBool, encrypt_action 0)
     if (%encrypt_action == 0) return
@@ -803,11 +803,11 @@ on *:INPUT:*: {
         ; Suffix style
         echo $color(own text) -t %display_win < $+ $me $+ > %message $+ $chr(183)
       }
-      else if (%mark_style == 2) {
+      elseif (%mark_style == 2) {
         ; Prefix style
         echo $color(own text) -t %display_win $chr(183) $+ < $+ $me $+ > %message
       }
-      else if (%mark_style == 3) {
+      elseif (%mark_style == 3) {
         ; Colored brackets style
         echo $color(own text) -t %display_win $chr(91) $+ $chr(43) $+ $chr(93) < $+ $me $+ > %message
       }
@@ -822,11 +822,11 @@ on *:INPUT:*: {
       .notice %target %encrypted
       haltdef
     }
-    else if ($1 == /msg) {
+    elseif ($1 == /msg) {
       .msg %target %encrypted
       haltdef
     }
-    else if ($1 == /me) {
+    elseif ($1 == /me) {
       .action %encrypted
       haltdef
     }
@@ -1395,19 +1395,19 @@ alias fish11_remove_channel_key {
 ;*******************************
 ;* FiSH_11 Master Key           *
 ;*******************************
-; Master key management for encrypting configuration
+; Keychain management for encrypting configuration
 
-; === MASTER KEY MANAGEMENT ===
+; === KEYCHAIN MANAGEMENT ===
 
 alias fish11_check_masterkey {
   var %is_unlocked = $dll(%Fish11DllFile, FiSH11_MasterKeyIsUnlocked, $null)
 
   if (%is_unlocked != 1) {
-    echo $color(Mode text) -at *** FiSH_11: master key is locked. Configuration and logs are NOT encrypted.
-    echo $color(Mode text) -at *** FiSH_11: use /fish11_unlock to unlock the master key.
+    echo $color(Mode text) -at *** FiSH_11: keychain is locked. Configuration and logs are NOT encrypted.
+    echo $color(Mode text) -at *** FiSH_11: use /fish11_unlock to unlock the keychain.
   }
   else {
-    echo $color(Mode text) -at *** FiSH_11: master key is unlocked. Configuration and logs ARE encrypted.
+    echo $color(Mode text) -at *** FiSH_11: keychain is unlocked. Configuration and logs ARE encrypted.
   }
 }
 
@@ -1415,11 +1415,11 @@ alias fish11_unlock {
   var %password = $1-
   
   if (%password == $null) {
-    %password = $input(Enter master key password:, pvq, FiSH_11 Master Key, )
+    %password = $input(Enter keychain password:, pvq, FiSH_11 Keychain, )
   }
   
   if (%password == $null) {
-    echo $color(Error) -at *** FiSH_11: master key unlock cancelled.
+    echo $color(Error) -at *** FiSH_11: keychain unlock cancelled.
     return
   }
   
@@ -1428,10 +1428,10 @@ alias fish11_unlock {
   unset %password
   
   if (%result) {
-    echo $color(Mode text) -at *** FiSH_11: %result
+    echo $color(Mode text) -at *** FiSH_11: keychain unlocked: %result
   }
   else {
-    echo $color(Error) -at *** FiSH_11: failed to unlock master key
+    echo $color(Error) -at *** FiSH_11: failed to unlock keychain - incorrect password or no keychain initialized
   }
 }
 
@@ -1439,10 +1439,10 @@ alias fish11_lock {
   var %result = $dll(%Fish11DllFile, FiSH11_MasterKeyLock, $null)
   
   if (%result) {
-    echo $color(Mode text) -at *** FiSH_11: %result
+    echo $color(Mode text) -at *** FiSH_11: keychain locked: %result
   }
   else {
-    echo $color(Error) -at *** FiSH_11: Failed to lock master key
+    echo $color(Error) -at *** FiSH_11: failed to lock keychain
   }
 }
 
@@ -1450,10 +1450,10 @@ alias fish11_masterkey_status {
   var %result = $dll(%Fish11DllFile, FiSH11_MasterKeyStatus, $null)
   
   if (%result) {
-    echo $color(Mode text) -at *** FiSH_11: %result
+    echo $color(Mode text) -at *** FiSH_11: keychain status: %result
   }
   else {
-    echo $color(Error) -at *** FiSH_11: Failed to get master key status
+    echo $color(Error) -at *** FiSH_11: failed to get keychain status
   }
 }
 
@@ -1461,10 +1461,10 @@ alias fish11_require_masterkey {
   var %is_unlocked = $dll(%Fish11DllFile, FiSH11_MasterKeyIsUnlocked, $null)
   
   while (%is_unlocked != 1) {
-    var %password = $input(Master key is locked. Enter password to unlock :, pvq, FiSH_11 Master Key Required, )
+    var %password = $input(Keychain is locked. Enter password to unlock:, pvq, FiSH_11 Keychain Unlock Required, )
     
     if (%password == $null) {
-      echo $color(Error) -at *** FiSH_11: master key unlock is required. Cancelling operation.
+      echo $color(Error) -at *** FiSH_11: keychain unlock required to proceed. Operation cancelled.
       return
     }
     
@@ -1474,7 +1474,7 @@ alias fish11_require_masterkey {
     %is_unlocked = $dll(%Fish11DllFile, FiSH11_MasterKeyIsUnlocked, $null)
     
     if (%is_unlocked == yes) {
-      echo $color(Mode text) -at *** FiSH_11: master key unlocked successfully
+      echo $color(Mode text) -at *** FiSH_11: keychain unlocked successfully
     }
     else {
       echo $color(Error) -at *** FiSH_11: incorrect password. Try again.
@@ -1915,10 +1915,10 @@ menu status,channel,nicklist,query {
   ..-
   ..Show diagnostics :fish11_fcep2_diag 10
   .-
-  .Master key
-  ..Unlock master key :fish11_unlock
-  ..Lock master key :fish11_lock
-  ..Show master key status :fish11_masterkey_status
+  .Keychain
+  ..Unlock keychain :fish11_unlock
+  ..Lock keychain :fish11_lock
+  ..Show keychain status :fish11_masterkey_status
   .-
   .Set topic (encrypted) :{
     ; Only allow in channel windows
@@ -2201,10 +2201,10 @@ alias fish11_help {
   }
 
   echo $color(Mode text) -at $chr(160)
-  echo $color(Mode text) -at *** FiSH_11 Master Key commands:
-  echo $color(Mode text) -at *** /fish11_unlock [password] - Unlock master key (encrypts config/logs)
-  echo $color(Mode text) -at *** /fish11_lock - Lock master key (clears from memory)
-  echo $color(Mode text) -at *** /fish11_masterkey_status - Show master key status
+  echo $color(Mode text) -at *** FiSH_11 Keychain commands:
+  echo $color(Mode text) -at *** /fish11_unlock [password] - Unlock keychain (encrypts config/logs)
+  echo $color(Mode text) -at *** /fish11_lock - Lock keychain (clears from memory)
+  echo $color(Mode text) -at *** /fish11_masterkey_status - Show keychain status
 
   echo $color(Mode text) -at $chr(160)
   echo $color(Mode text) -at *** FiSH_11 Key TTL (Expiration):
@@ -2512,7 +2512,7 @@ alias fish11_fcep2_init_device {
 alias fish11_fcep2_create_group {
   if (!$1) { echo 4 -a Syntax: /fcep2_create <#channel> [keypackage1] ... | return }
   var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_CreateGroup, $1-)
-  if ($left(%result, 12) == GROUP_CREATED) {
+  if ($left(%result, 13) == GROUP_CREATED) {
     var %gid = $gettok(%result, 2, 32)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: group created for $1 (gid: %gid $+ )
     set %fcep2.group. $+ [ $1 ] %gid
@@ -2523,7 +2523,7 @@ alias fish11_fcep2_create_group {
 ; === FCEP-2 KEYPACKAGE GENERATION ===
 alias fish11_fcep2_gen_keypackage {
   var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_GenKeyPackage, $iif($1-, $1-, mIRC_User))
-  if ($left(%result, 11) == KEYPACKAGE) {
+  if ($left(%result, 10) == KEYPACKAGE) {
     var %kp = $gettok(%result, 2, 32)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: KeyPackage generated
     return %kp
@@ -2555,15 +2555,15 @@ alias -l fish11_fcep2_process {
     var %plaintext = $gettok(%result, 4-, 32)
     echo $color(Message text) -dm %chan *** $gettok(%result, 2, 32) $+ : %plaintext
   }
-  else if ($left(%result, 6) == JOINED) {
+  elseif ($left(%result, 6) == JOINED) {
     var %chan = $gettok(%result, 2, 32)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: joined group for %chan
     set %fcep2.group. $+ [ %chan ] $gettok(%result, 3, 32)
   }
-  else if ($left(%result, 13) == COMMIT_APPLIED) {
+  elseif ($left(%result, 13) == COMMIT_APPLIED) {
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: commit applied, epoch= $+ $gettok(%result, 2, 61)
   }
-  else if ($left(%result, 16) == CONFLICT_DETECTED) {
+  elseif ($left(%result, 16) == CONFLICT_DETECTED) {
     echo 4 -ts *** FiSH_11 FCEP-2 WARNING: commit conflict detected!
   }
 }
@@ -2582,7 +2582,7 @@ alias fish11_fcep2_propose {
 alias fish11_fcep2_commit {
   if (!$1) { echo 4 -a Syntax: /fcep2_commit <#channel> | return }
   var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_SendCommit, $1)
-  if ($left(%result, 12) == COMMIT_SENT) {
+  if ($left(%result, 11) == COMMIT_SENT) {
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: commit sent, epoch= $+ $gettok(%result, 2, 61)
     var %envelopes = $gettok(%result, 3-, 32)
     if (%envelopes != $null) { .msg $1 %envelopes }
@@ -2594,7 +2594,7 @@ alias fish11_fcep2_commit {
 alias fish11_fcep2_remove {
   if (!$1 || !$2) { echo 4 -a Syntax: /fcep2_remove <#channel> <device_id_hex> | return }
   var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_RemoveDevice, $1 $2)
-  if ($left(%result, 18) == REMOVAL_COMMITTED) {
+  if ($left(%result, 17) == REMOVAL_COMMITTED) {
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: device removed, epoch= $+ $gettok(%result, 2, 61)
   }
   else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }
@@ -2622,7 +2622,7 @@ alias fish11_fcep2_state {
     echo $color(Mode text) -ts   Epoch: $gettok(%result, 6, 61)
     echo $color(Mode text) -ts   In Conflict: $gettok(%result, 8, 61)
   }
-  else if ($left(%result, 8) == NO_GROUP) {
+  elseif ($left(%result, 8) == NO_GROUP) {
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: no group for $1
   }
   else { echo 4 -ts *** FiSH_11 FCEP-2 ERROR: %result }

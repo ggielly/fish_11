@@ -110,13 +110,13 @@ fn load_encrypted_config_from_file(config_path: &PathBuf) -> Result<FishConfig> 
 
     if !is_master_key_available() {
         return Err(FishError::ConfigError(
-            "Encrypted config detected but master key not unlocked. Use FiSH11_MasterKeyUnlock first."
+            "Encrypted config detected but keychain is locked. Use /fish11_unlock to unlock it first."
                 .to_string(),
         ));
     }
 
     let master_key = crate::dll_interface::fish11_masterkey::get_master_key_from_memory()
-        .ok_or_else(|| FishError::ConfigError("Master key not available in memory".to_string()))?;
+        .ok_or_else(|| FishError::ConfigError("Keychain not available in memory - has it been unlocked?".to_string()))?;
 
     let config_kek = derive_config_kek(&master_key);
 
@@ -158,7 +158,7 @@ pub fn save_encrypted_config(config: &FishConfig, path_override: Option<PathBuf>
         .map_err(|e| FishError::ConfigError(format!("Failed to convert INI to string: {}", e)))?;
 
     if !is_master_key_available() {
-        return Err(FishError::ConfigError("Cannot save encrypted config: master key not unlocked. Use FiSH11_MasterKeyUnlock first.".to_string()));
+        return Err(FishError::ConfigError("Cannot save encrypted config: keychain is locked. Use /fish11_unlock to unlock it first.".to_string()));
     }
 
     let master_key = crate::dll_interface::fish11_masterkey::get_master_key_from_memory()

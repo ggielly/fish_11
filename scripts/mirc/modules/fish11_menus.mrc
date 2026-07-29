@@ -190,10 +190,10 @@ menu status,channel,nicklist,query {
   ..-
   ..Show diagnostics :fish11_fcep2_diag 10
   .-
-  .Master key
-  ..Unlock master key :fish11_unlock
-  ..Lock master key :fish11_lock
-  ..Show master key status :fish11_masterkey_status
+  .Keychain
+  ..Unlock keychain :fish11_unlock
+  ..Lock keychain :fish11_lock
+  ..Show keychain status :fish11_masterkey_status
   .-
   .Set topic (encrypted) :{
     ; Only allow in channel windows

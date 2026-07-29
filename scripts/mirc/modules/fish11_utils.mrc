@@ -105,12 +105,12 @@ alias fish11_help {
     echo $color(Mode text) -at *** FiSH: help information unavailable
   }
 
-  ; Add Master Key help
+  ; Add Keychain help
   echo $color(Mode text) -at $chr(160)
-  echo $color(Mode text) -at *** FiSH_11 Master Key commands:
-  echo $color(Mode text) -at *** /fish11_unlock [password] - Unlock master key (encrypts config/logs)
-  echo $color(Mode text) -at *** /fish11_lock - Lock master key (clears from memory)
-  echo $color(Mode text) -at *** /fish11_masterkey_status - Show master key status
+  echo $color(Mode text) -at *** FiSH_11 Keychain commands:
+  echo $color(Mode text) -at *** /fish11_unlock [password] - Unlock keychain (encrypts config/logs)
+  echo $color(Mode text) -at *** /fish11_lock - Lock keychain (clears from memory)
+  echo $color(Mode text) -at *** /fish11_masterkey_status - Show keychain status
   echo $color(Mode text) -at ***   When unlocked: configuration and logs are encrypted with Argon2id + ChaCha20-Poly1305
   echo $color(Mode text) -at ***   When locked: configuration and logs are stored in plaintext
 

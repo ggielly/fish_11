@@ -38,7 +38,7 @@ alias fish11_fcep2_create_group {
   
   var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_CreateGroup, %args)
   
-  if ($left(%result, 12) == GROUP_CREATED) {
+  if ($left(%result, 13) == GROUP_CREATED) {
     var %gid = $gettok(%result, 2, 32)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: group created for %channel (gid: %gid $+ )
     
@@ -65,7 +65,7 @@ alias fish11_fcep2_gen_keypackage {
   var %label = $iif($1-, $1-, mIRC_User)
   var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_GenKeyPackage, %label)
   
-  if ($left(%result, 11) == KEYPACKAGE) {
+  if ($left(%result, 10) == KEYPACKAGE) {
     var %kp = $gettok(%result, 2, 32)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: KeyPackage generated
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: KeyPackage: %kp
@@ -141,57 +141,57 @@ alias -l fish11_fcep2_process {
     var %plaintext = $gettok(%result, 4-, 32)
     echo $color(Message text) -dm %chan *** %nick $+ : %plaintext
   }
-  else if ($left(%result, 6) == JOINED) {
+  elseif ($left(%result, 6) == JOINED) {
     ; JOINED <channel> <group_id_b64>
     var %chan = $gettok(%result, 2, 32)
     var %gid = $gettok(%result, 3, 32)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: joined group for %chan (gid: %gid $+ )
     set %fcep2.group. $+ [ %chan ] %gid
   }
-  else if ($left(%result, 13) == FRAGMENT_WAIT) {
+  elseif ($left(%result, 13) == FRAGMENT_WAIT) {
     ; FRAGMENT_WAIT <n>/<total>
     ; Do not display, just wait for more fragments
   }
-  else if ($left(%result, 8) == DEFERRED) {
+  elseif ($left(%result, 8) == DEFERRED) {
     ; DEFERRED <group_id> <kind>
     ; Message queued for later delivery
   }
-  else if ($left(%result, 16) == DUPLICATE_SKIPPED) {
+  elseif ($left(%result, 17) == DUPLICATE_SKIPPED) {
     ; DUPLICATE_SKIPPED - do not display
   }
-  else if ($left(%result, 15) == PROPOSAL_RECEIVED) {
+  elseif ($left(%result, 17) == PROPOSAL_RECEIVED) {
     ; PROPOSAL_RECEIVED from <nick>
     var %from = $gettok(%result, 3, 32)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: proposal received from %from
   }
-  else if ($left(%result, 13) == COMMIT_APPLIED) {
+  elseif ($left(%result, 14) == COMMIT_APPLIED) {
     ; COMMIT_APPLIED epoch=<n>
     var %epoch = $gettok(%result, 2, 61)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: commit applied, epoch=%epoch
   }
-  else if ($left(%result, 16) == CONFLICT_DETECTED) {
+  elseif ($left(%result, 17) == CONFLICT_DETECTED) {
     ; CONFLICT_DETECTED epoch=<n>
     echo 4 -ts *** FiSH_11 FCEP-2 WARNING: commit conflict detected!
   }
-  else if ($left(%result, 14) == COMMIT_REJECTED) {
+  elseif ($left(%result, 15) == COMMIT_REJECTED) {
     ; COMMIT_REJECTED <reason>
     var %reason = $gettok(%result, 2-, 32)
     echo 4 -ts *** FiSH_11 FCEP-2: commit rejected: %reason
   }
-  else if ($left(%result, 13) == SYNC_APPLIED) {
+  elseif ($left(%result, 12) == SYNC_APPLIED) {
     ; SYNC_APPLIED epoch=<n>
     var %epoch = $gettok(%result, 2, 61)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: sync applied, epoch=%epoch
   }
-  else if ($left(%result, 12) == SYNC_NO_CHANGE) {
+  elseif ($left(%result, 14) == SYNC_NO_CHANGE) {
     ; SYNC_NO_CHANGE - no action needed
   }
-  else if ($left(%result, 13) == SYNC_RESPONSE) {
+  elseif ($left(%result, 13) == SYNC_RESPONSE) {
     ; SYNC_RESPONSE <b64> - send as NOTICE to requester
     var %resp = $gettok(%result, 2, 32)
     .notice %source +FCEP2 S %resp
   }
-  else if ($left(%result, 23) == KEYPACKAGE_RESPONSE) {
+  elseif ($left(%result, 19) == KEYPACKAGE_RESPONSE) {
     ; KEYPACKAGE_RESPONSE <b64_kp> ...
     var %kps = $gettok(%result, 2-, 32)
     .notice %source +FCEP2 K %kps
@@ -239,7 +239,7 @@ alias fish11_fcep2_commit {
   var %channel = $1
   var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_SendCommit, %channel)
   
-  if ($left(%result, 12) == COMMIT_SENT) {
+  if ($left(%result, 11) == COMMIT_SENT) {
     var %epoch = $gettok(%result, 2, 61)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: commit sent, epoch=%epoch
     
@@ -269,7 +269,7 @@ alias fish11_fcep2_remove {
   
   var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_RemoveDevice, %channel %dev_id)
   
-  if ($left(%result, 18) == REMOVAL_COMMITTED) {
+  if ($left(%result, 17) == REMOVAL_COMMITTED) {
     var %epoch = $gettok(%result, 2, 61)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: device removed, epoch=%epoch
   }
@@ -327,7 +327,7 @@ alias fish11_fcep2_state {
     echo $color(Mode text) -ts   Epoch: %epoch
     echo $color(Mode text) -ts   In Conflict: %conflict
   }
-  else if ($left(%result, 8) == NO_GROUP) {
+  elseif ($left(%result, 8) == NO_GROUP) {
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2: no group for %channel
   }
   else {
@@ -472,7 +472,7 @@ alias fish11_fcep2_diag {
   var %count = $iif($1, $1, 10)
   var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_GetDiagnostics, * %count)
   
-  if ($left(%result, 10) == DIAGNOSTICS) {
+  if ($left(%result, 11) == DIAGNOSTICS) {
     var %count = $gettok(%result, 2, 32)
     echo $color(Mode text) -ts *** FiSH_11 FCEP-2 Diagnostics (%count events):
     var %i = 3
@@ -494,7 +494,7 @@ alias fish11_fcep2_request_kp {
   var %target = $iif($1, $1, ALL)
   var %result = $dll(%Fish11DllFile, FiSH11_FCEP2_RequestKeyPackage, * %target)
   
-  if ($left(%result, 18) == KEYPACKAGE_RESPONSE) {
+  if ($left(%result, 19) == KEYPACKAGE_RESPONSE) {
     var %kps = $gettok(%result, 2-, 32)
     if (%kps == NONE) {
       echo $color(Mode text) -ts *** FiSH_11 FCEP-2: no KeyPackages available

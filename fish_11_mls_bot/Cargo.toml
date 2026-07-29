@@ -40,7 +40,7 @@ hex = "0.4"
 libloading = "0.8"
 
 # Random (for nonce generation in database encryption)
-rand = "0.8"
+rand = "0.8.7"
 
 # File logging (same as fish_11_relay)
 tracing-appender = "0.2"
@@ -52,12 +52,12 @@ fish_11 = { path = "../fish_11_dll", optional = true }
 sled = "0.34"
 
 # Encryption for database at-rest (already used in fish_11_dll)
-chacha20poly1305 = "0.10"
-hkdf = "0.12"
-sha2 = "0.10"
+chacha20poly1305 = "0.10.1"
+hkdf = "0.13"
+sha2 = "0.11"
 
 # OnceCell for lazy statics
-once_cell = "1.20"
+once_cell = "1"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }

@@ -225,8 +225,8 @@ pub enum DllError {
     #[error("TLS codec error: {0}")]
     TlsCodec(String),
 
-    /// Master key is locked
-    #[error("master key is locked")]
+    /// Keychain is locked (master key not available)
+    #[error("keychain is locked - use /fish11_unlock <password> to unlock it")]
     MasterKeyLocked,
 
     /// Feature not implemented

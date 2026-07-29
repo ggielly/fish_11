@@ -104,7 +104,7 @@ alias fish11_startup {
   ; Key exchange timeout (seconds) - keep in sync with DLL constant; can be overridden by user
   if (%KEY_EXCHANGE_TIMEOUT_SECONDS == $null) { set %KEY_EXCHANGE_TIMEOUT_SECONDS 10 }
 
-  ; Check if master key is unlocked, if not prompt user
+  ; Check if keychain is unlocked, if not prompt user
   .fish11_check_masterkey
 
   ; Initialize FCEP-2 device identity

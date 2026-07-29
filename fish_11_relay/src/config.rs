@@ -1,6 +1,6 @@
 //! FCEP-2 Relay Bot TOML Configuration Engine
 //!
-//! Loads and manages `fish_relay.toml` configuration (similar structure to `fish_11.ini`).
+//! Loads and manages `fish_relay.ini` configuration (similar structure to `fish_11.ini`).
 
 use std::fs;
 use std::path::Path;
@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-pub const DEFAULT_CONFIG_FILE: &str = "fish_relay.toml";
+pub const DEFAULT_CONFIG_FILE: &str = "fish_relay.ini";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -23,6 +23,9 @@ pub struct ServerConfig {
     pub address: String,
     pub port: u16,
     pub use_tls: bool,
+    /// Accept invalid/self-signed TLS certificates (default: false)
+    #[serde(default)]
+    pub danger_accept_invalid_certs: bool,
     pub nickname: String,
     pub username: String,
     pub realname: String,
@@ -50,6 +53,7 @@ impl Default for AppConfig {
                 address: "irc.libera.chat".to_string(),
                 port: 6697,
                 use_tls: true,
+                danger_accept_invalid_certs: false,
                 nickname: "FiSH_Relay".to_string(),
                 username: "fishbot".to_string(),
                 realname: "FiSH-11 FCEP-2 Synchronization Relay".to_string(),
@@ -68,7 +72,7 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    /// Load configuration from TOML file, creating default `fish_relay.toml` if it does not exist
+    /// Load configuration from TOML file, creating default `fish_relay.ini` if it does not exist
     pub fn load_or_create<P: AsRef<Path>>(path: P) -> Result<Self> {
         let p = path.as_ref();
         if !p.exists() {

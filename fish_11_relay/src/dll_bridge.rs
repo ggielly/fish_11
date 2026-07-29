@@ -15,7 +15,7 @@ use tracing::{info, warn};
 /// The HWND type (`*mut *mut c_void`) is Win32-specific; on non-Windows platforms
 /// the bridge compiles against the internal Rust subsystem instead.
 #[cfg(windows)]
-type MircDllFn = unsafe extern "C" fn(
+type MircDllFn = unsafe extern "system" fn(
     m_wnd: *mut *mut std::ffi::c_void,
     a_wnd: *mut *mut std::ffi::c_void,
     data: *mut c_char,

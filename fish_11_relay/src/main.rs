@@ -35,16 +35,20 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 )]
 struct Cli {
     /// Path to TOML configuration file
-    #[arg(short, long, default_value = DEFAULT_CONFIG_FILE)]
+    #[arg(short, long, global = true, default_value = DEFAULT_CONFIG_FILE)]
     config: PathBuf,
 
     /// Log level: trace, debug, info, warn, error
-    #[arg(short, long, default_value = "info")]
+    #[arg(short, long, global = true, default_value = "info")]
     log_level: String,
 
     /// Write logs to a file instead of (or in addition to) stderr
-    #[arg(short = 'f', long)]
+    #[arg(short = 'f', long, global = true)]
     log_file: Option<PathBuf>,
+
+    /// Accept invalid/self-signed TLS certificates
+    #[arg(short = 'k', long, global = true)]
+    insecure: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -111,7 +115,7 @@ async fn main() -> Result<()> {
     let bridge = DllBridge::new();
 
     match &cli.command {
-        Commands::Run => run_relay_bot(&bridge, &cli.config).await,
+        Commands::Run => run_relay_bot(&bridge, &cli.config, cli.insecure).await,
         Commands::InitDevice { label } => {
             let res = bridge.call_dll_fn("FiSH11_FCEP2_InitDevice", label)?;
             println!("{}", res);
@@ -131,7 +135,7 @@ async fn main() -> Result<()> {
 }
 
 /// Run async IRC relay bot loop with automatic reconnection and graceful shutdown
-async fn run_relay_bot(bridge: &DllBridge, config_path: &Path) -> Result<()> {
+async fn run_relay_bot(bridge: &DllBridge, config_path: &Path, insecure_cli: bool) -> Result<()> {
     info!("FiSH-11 FCEP-2 IRC Synchronizer v{}", VERSION);
 
     // Initialize device identity via DLL
@@ -140,6 +144,7 @@ async fn run_relay_bot(bridge: &DllBridge, config_path: &Path) -> Result<()> {
 
     let app_config = AppConfig::load_or_create(config_path)?;
     app_config.validate()?;
+    let insecure = insecure_cli || app_config.server.danger_accept_invalid_certs;
     let store = RelayStore::new(&app_config.storage.data_dir);
 
     // Start periodic persist and purge task (every 30s)
@@ -203,7 +208,7 @@ async fn run_relay_bot(bridge: &DllBridge, config_path: &Path) -> Result<()> {
                 persist_handle.abort();
                 return Ok(());
             }
-            result = connect_and_listen(bridge, &store, &app_config, &mut attempt) => {
+            result = connect_and_listen(bridge, &store, &app_config, &mut attempt, insecure) => {
                 if let Err(e) = result {
                     error!("Fatal error in relay loop: {}", e);
                     // Persist one last time before returning
@@ -219,22 +224,110 @@ async fn run_relay_bot(bridge: &DllBridge, config_path: &Path) -> Result<()> {
     }
 }
 
+/// Connect to IRC using `Client::from_config()` with the `dangerously_accept_invalid_certs`
+/// option set when `insecure` is true. The `irc` crate v1.1.0 handles TLS internally
+/// via `native_tls` on Windows (SChannel) and respects this config field.
+async fn connect_to_irc(
+    app_config: &AppConfig,
+    insecure: bool,
+) -> Result<irc::client::Client> {
+    let mut config = app_config.to_irc_config();
+    config.dangerously_accept_invalid_certs = Some(insecure);
+    Client::from_config(config).await.map_err(|e| {
+        let msg = translate_irc_error(&e);
+        anyhow!("{}", msg)
+    })
+}
+
+/// Normalize Unicode punctuation commonly found in localized OS error messages
+/// to plain ASCII equivalents for reliable string matching.
+fn normalize_error_msg(msg: &str) -> String {
+    msg.replace('\u{2019}', "'")  // RIGHT SINGLE QUOTATION MARK -> ASCII apostrophe
+        .replace('\u{2018}', "'")  // LEFT SINGLE QUOTATION MARK -> ASCII apostrophe
+        .replace('\u{201C}', "\"") // LEFT DOUBLE QUOTATION MARK -> ASCII double quote
+        .replace('\u{201D}', "\"") // RIGHT DOUBLE QUOTATION MARK -> ASCII double quote
+        .replace('\u{2013}', "-")  // EN DASH -> ASCII hyphen
+        .replace('\u{2014}', "--") // EM DASH -> double hyphen
+}
+
+/// Translate known French SChannel TLS error messages to English.
+///
+/// The `irc` crate wraps `native_tls::Error` in its `Error::Tls` variant with the
+/// Display format: `"a TLS error occurred: {native_tls_message}"`.
+/// This function extracts the inner message, normalizes Unicode curly quotes
+/// (Windows SChannel uses RIGHT SINGLE QUOTATION MARK U+2019), and translates
+/// known French patterns to English.
+fn translate_irc_error(e: &irc::error::Error) -> String {
+    let display = e.to_string();
+
+    // Extract the native TLS message from the wrapper format
+    // "a TLS error occurred: Une chaîne de certificats..."
+    let inner_msg = if let Some(msg) = display.strip_prefix("a TLS error occurred: ") {
+        msg.trim()
+    } else {
+        // Not a TLS error or different format; return Display as-is
+        return display;
+    };
+
+    let normalized = normalize_error_msg(inner_msg);
+
+    // Check for known SChannel error patterns (French & English)
+    if normalized.contains("certificat racine qui n'est pas approuve")
+        || normalized.contains("CERT_E_UNTRUSTEDROOT")
+        || normalized.contains("certificat racine")
+        || normalized.contains("untrusted root")
+    {
+        return "The certificate chain was processed but terminated in a root \
+                certificate that is not trusted by the trust provider. \
+                Use --insecure or set danger_accept_invalid_certs=true \
+                to bypass certificate validation."
+            .to_string();
+    }
+    if normalized.contains("certificat auto-signe")
+        || normalized.contains("CERT_E_UNTRUSTEDCA")
+        || normalized.contains("self-signed certificate")
+    {
+        return "A self-signed or untrusted CA certificate was received. \
+                Use --insecure or set danger_accept_invalid_certs=true \
+                to bypass certificate validation."
+            .to_string();
+    }
+    if normalized.contains("certificat a expire")
+        || normalized.contains("CERT_E_EXPIRED")
+        || normalized.contains("certificate has expired")
+    {
+        return "The server certificate has expired.".to_string();
+    }
+    if normalized.contains("nom d'hote")
+        || normalized.contains("CERT_E_CN_NO_MATCH")
+        || normalized.contains("ne correspond pas")
+        || normalized.contains("hostname mismatch")
+    {
+        return "The certificate does not match the server hostname.".to_string();
+    }
+
+    // No match: return the normalized inner message (still better than raw French)
+    normalized
+}
+
 /// Attempt to connect to IRC, listen for FCEP-2 messages, and handle reconnection logic
 async fn connect_and_listen(
     _bridge: &DllBridge,
     store: &RelayStore,
     app_config: &AppConfig,
     attempt: &mut u32,
+    insecure: bool,
 ) -> Result<()> {
     info!(
-        "Connecting to {}:{} (TLS: {}) as '{}'...",
+        "Connecting to {}:{} (TLS: {}) as '{}'{}...",
         app_config.server.address,
         app_config.server.port,
         app_config.server.use_tls,
-        app_config.server.nickname
+        app_config.server.nickname,
+        if insecure { " (insecure mode)" } else { "" }
     );
 
-    match Client::from_config(app_config.to_irc_config()).await {
+    match connect_to_irc(app_config, insecure).await {
         Ok(mut client) => {
             if let Err(e) = client.identify() {
                 error!("Failed to identify: {}", e);

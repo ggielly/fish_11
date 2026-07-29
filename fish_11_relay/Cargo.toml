@@ -8,7 +8,7 @@ authors = ["GuY"]
 
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
-irc = "1.1.0"
+irc = { version = "1.1.0", features = ["tls-native"] }
 futures = "0.3"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
